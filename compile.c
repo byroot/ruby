@@ -11396,6 +11396,7 @@ ibf_load_object_string(const struct ibf_load *load, const struct ibf_object_head
 
     VALUE str;
     if (header->frozen && !header->internal) {
+        printf("rb_enc_interned_str(\"%s\", %ld, %d)\n", ptr, len, encindex);
         str = rb_enc_interned_str(ptr, len, rb_enc_from_index(encindex));
     } else {
         str = rb_enc_str_new(ptr, len, rb_enc_from_index(encindex));

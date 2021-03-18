@@ -12,6 +12,12 @@ class Test_String_Fstring < Test::Unit::TestCase
     yield fstr
   end
 
+  def test_rb_enc_interned_str_windows_31_j
+    s = Bug::String.rb_enc_interned_str("aas" + "sfd", Encoding::WINDOWS_31J)
+    p s
+    p s.encoding
+  end
+
   def test_instance_variable
     str = __method__.to_s * 3
     str.instance_variable_set(:@test, 42)
