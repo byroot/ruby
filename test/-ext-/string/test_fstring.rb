@@ -13,7 +13,7 @@ class Test_String_Fstring < Test::Unit::TestCase
   end
 
   def test_rb_enc_interned_str_windows_31_j
-    s = Bug::String.rb_enc_interned_str("aas" + "sfd", Encoding::WINDOWS_31J)
+    s = Bug::String.rb_enc_interned_str
     p s
     p s.encoding
   end

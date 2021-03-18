@@ -12,15 +12,14 @@ bug_s_fstring(VALUE self, VALUE str)
 }
 
 VALUE
-bug_s_rb_enc_interned_str(VALUE self, VALUE str, VALUE enc)
+bug_s_rb_enc_interned_str(VALUE self)
 {
-    const char *foo = "foo\0";
-    return rb_enc_interned_str(foo, 4, rb_to_encoding(enc));
+    return rb_enc_interned_str("foo", 3, rb_enc_from_index(11));
 }
 
 void
 Init_string_fstring(VALUE klass)
 {
     rb_define_singleton_method(klass, "fstring", bug_s_fstring, 1);
-    rb_define_singleton_method(klass, "rb_enc_interned_str", bug_s_rb_enc_interned_str, 2);
+    rb_define_singleton_method(klass, "rb_enc_interned_str", bug_s_rb_enc_interned_str, 0);
 }
