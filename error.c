@@ -3332,6 +3332,8 @@ rb_load_fail(VALUE path, const char *err)
 void
 rb_error_frozen(const char *what)
 {
+        rb_bug("frozen");
+        puts("rb_error_frozen");
     rb_raise(rb_eFrozenError, "can't modify frozen %s", what);
 }
 
@@ -3366,6 +3368,8 @@ rb_error_frozen_object(VALUE frozen_obj)
 {
     VALUE debug_info;
     const ID created_info = id_debug_created_info;
+    puts("rb_error_frozen_object");
+    rb_bug("rb_error_frozen_object");
     VALUE mesg = rb_sprintf("can't modify frozen %"PRIsVALUE": ",
                             CLASS_OF(frozen_obj));
     VALUE exc = rb_exc_new_str(rb_eFrozenError, mesg);

@@ -458,6 +458,7 @@ rb_class_modify_check(VALUE klass)
                 UNREACHABLE;
 	    }
 	}
+        puts("modify_check");
         rb_frozen_error_raise(klass, "can't modify frozen %s: %"PRIsVALUE, desc, klass);
     }
 }
