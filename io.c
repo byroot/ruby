@@ -924,7 +924,7 @@ io_unread(rb_io_t *fptr)
         return;
     /* xxx: target position may be negative if buffer is filled by ungetc */
     errno = 0;
-    r = lseek(fptr->fd, -fptr->rbuf.len, SEEK_CUR);
+    r = lseek(fptr->fd, -(fptr->rbuf.len - fptr->rbuf.unread_offset), SEEK_CUR);
     if (r < 0 && errno) {
         if (errno == ESPIPE)
             fptr->mode |= FMODE_DUPLEX;
@@ -932,6 +932,7 @@ io_unread(rb_io_t *fptr)
     }
     fptr->rbuf.off = 0;
     fptr->rbuf.len = 0;
+    fptr->rbuf.unread_offset = 0;
     return;
 }
 #endif
@@ -968,6 +969,7 @@ io_ungetbyte(VALUE str, rb_io_t *fptr)
     }
     fptr->rbuf.off-=(int)len;
     fptr->rbuf.len+=(int)len;
+    fptr->rbuf.unread_offset += len;
     MEMMOVE(fptr->rbuf.ptr+fptr->rbuf.off, RSTRING_PTR(str), char, len);
 }
 
@@ -3038,6 +3040,14 @@ read_buffered_data(char *ptr, long len, rb_io_t *fptr)
     MEMMOVE(ptr, fptr->rbuf.ptr+fptr->rbuf.off, char, n);
     fptr->rbuf.off += n;
     fptr->rbuf.len -= n;
+
+    if (fptr->rbuf.unread_offset) {
+        if (n > fptr->rbuf.unread_offset) {
+            fptr->rbuf.unread_offset = 0;
+        } else {
+            fptr->rbuf.unread_offset -= n;
+        }
+    }
     return n;
 }
 

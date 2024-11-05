@@ -104,6 +104,8 @@ struct rb_io_internal_buffer {
 
     /** Designed capacity of the buffer. */
     int capa;
+
+    int unread_offset;
 } RBIMPL_ATTR_PACKED_STRUCT_UNALIGNED_END();
 
 /** @alias{rb_io_buffer_t} */
