@@ -8219,6 +8219,20 @@ rb_ary_deconstruct(VALUE ary)
     return ary;
 }
 
+static VALUE bench_ary_push(VALUE self, VALUE vsize, VALUE viter)
+{
+    long size = NUM2LONG(vsize);
+    VALUE ary = rb_ary_new2(size);
+    long iter = NUM2LONG(viter);
+    for (long index = 0; index < iter; index++) {
+        for (long i = 0; i < size; i++) {
+            rb_ary_push(ary, Qfalse);
+        }
+        rb_ary_clear(ary);
+    }
+    return Qnil;
+}
+
 /*
  *  An \Array object is an ordered, integer-indexed collection of objects,
  *  called _elements_;
@@ -8729,6 +8743,8 @@ Init_Array(void)
 
     rb_cArray  = rb_define_class("Array", rb_cObject);
     rb_include_module(rb_cArray, rb_mEnumerable);
+
+    rb_define_singleton_method(rb_cArray, "bench_ary_push", bench_ary_push, 2);
 
     rb_define_alloc_func(rb_cArray, empty_ary_alloc);
     rb_define_singleton_method(rb_cArray, "new", rb_ary_s_new, -1);

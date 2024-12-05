@@ -1,0 +1,3 @@
+benchmark:
+  "64*2k": Array.bench_ary_push(128, 2_000)
+  "128*1k": Array.bench_ary_push(128, 1_000)
