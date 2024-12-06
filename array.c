@@ -521,7 +521,9 @@ rb_ary_set_shared(VALUE ary, VALUE shared_root)
 static inline void
 rb_ary_modify_check(VALUE ary)
 {
-    rb_check_frozen(ary);
+    if (RB_OBJ_FROZEN_RAW(ary)) {
+        rb_check_frozen(ary);
+    }
     ary_verify(ary);
 }
 
@@ -571,6 +573,200 @@ rb_ary_modify(VALUE ary)
 {
     rb_ary_modify_check(ary);
     rb_ary_cancel_sharing(ary);
+}
+
+
+typedef enum ary_type {
+    ary_heap = 0,
+    ary_shared = RARRAY_SHARED_FLAG,
+    ary_embed = RARRAY_EMBED_FLAG,
+} ary_type;
+
+#define UARY_TYPE_MASK (RARRAY_SHARED_FLAG | RARRAY_EMBED_FLAG)
+
+typedef struct unboxed_ary {
+    VALUE ary;
+    ary_type type;
+    long len;
+    long capa;
+    const VALUE *ptr;
+} unboxed_ary;
+
+#define uary_verify(uary) ary_verify((uary)->ary)
+
+static inline void
+unbox_ary(VALUE ary, unboxed_ary *uary)
+{
+    RUBY_ASSERT(RB_TYPE_P(ary, T_ARRAY));
+    ary_verify(ary);
+
+    uary->ary = ary;
+    uary->type = (ary_type)(FL_TEST_RAW(ary, UARY_TYPE_MASK));
+
+    switch (uary->type) {
+      case ary_heap:
+        uary->len = ARY_HEAP_LEN(ary);
+        uary->capa = ARY_SHARED_ROOT_P(ary) ? uary->len : ARY_HEAP_CAPA(ary);
+        uary->ptr = RARRAY(ary)->as.heap.ptr;
+        break;
+      case ary_shared:
+        uary->len = ARY_HEAP_LEN(ary);
+        uary->capa = ARY_HEAP_LEN(ary);
+        uary->ptr = RARRAY(ary)->as.heap.ptr;
+        break;
+      case ary_embed:
+        uary->len = ARY_EMBED_LEN(ary);
+        uary->capa = ary_embed_capa(ary);
+        uary->ptr = RARRAY(ary)->as.ary;
+        break;
+    }
+}
+
+static void
+uary_spill(unboxed_ary *uary, VALUE *ptr, long capa)
+{
+    RUBY_ASSERT(uary->type == ary_embed);
+
+    MEMCPY(ptr, uary->ptr, VALUE, uary->len);
+    uary->type = ary_heap;
+    uary->ptr = ptr;
+    uary->capa = capa;
+    FL_UNSET_EMBED(uary->ary);
+    ARY_SET_PTR(uary->ary, ptr);
+    ARY_SET_HEAP_LEN(uary->ary, uary->len);
+    ARY_SET_CAPA(uary->ary, uary->capa);
+}
+
+static void
+uary_set_len(unboxed_ary *uary, long len)
+{
+    switch (uary->type) {
+      case ary_heap:
+      case ary_shared:
+        ARY_SET_HEAP_LEN(uary->ary, len);
+        break;
+      case ary_embed:
+        ARY_SET_EMBED_LEN(uary->ary, len);
+        break;
+    }
+    uary->len = len;
+}
+
+static void
+uary_reembed(unboxed_ary *uary, long capa)
+{
+    if (uary->len > capa) uary->len = capa;
+
+    MEMCPY((VALUE *)RARRAY(uary->ary)->as.ary, uary->ptr, VALUE, uary->len);
+    ary_heap_free_ptr(uary->ary, uary->ptr, uary->capa);
+
+    uary->type = ary_embed;
+    FL_SET_EMBED(uary->ary);
+    ARY_SET_EMBED_LEN(uary->ary, uary->len);
+}
+
+static size_t
+uary_realloc(unboxed_ary *uary, long capa)
+{
+    ARY_SET_CAPA(uary->ary, capa);
+    return uary->capa = ary_heap_realloc(uary->ary, capa);
+}
+
+static void
+uary_resize_capa(unboxed_ary *uary, long capacity)
+{
+    RUBY_ASSERT(uary->len <= capacity);
+    RUBY_ASSERT(!OBJ_FROZEN(uary->ary));
+    RUBY_ASSERT(uary->type != ary_shared);
+
+    if (capacity > ary_embed_capa(uary->ary)) {
+        if (uary->type == ary_embed) {
+            uary_spill(uary, ary_heap_alloc_buffer(capacity), capacity);
+        }
+        else {
+            uary_realloc(uary, capacity);
+        }
+    }
+    else {
+        if (uary->type != ary_embed) {
+            uary_reembed(uary, capacity);
+        }
+    }
+
+    ary_verify(ary);
+}
+
+static void
+uary_double_capa(unboxed_ary *uary, long min)
+{
+    long new_capa = uary->capa / 2;
+
+    if (new_capa < ARY_DEFAULT_SIZE) {
+        new_capa = ARY_DEFAULT_SIZE;
+    }
+    if (new_capa >= ARY_MAX_SIZE - min) {
+        new_capa = (ARY_MAX_SIZE - min) / 2;
+    }
+    new_capa += min;
+    uary_resize_capa(uary, new_capa);
+
+    uary_verify(uary);
+}
+
+static void
+uary_modify(unboxed_ary *uary)
+{
+    rb_ary_modify(uary->ary);
+    if (uary->type == ary_shared) {
+        // TODO: Ideally we'd have a `uary_modify`
+        unbox_ary(uary->ary, uary);
+    }
+}
+
+static VALUE
+uary_ensure_room_for_push(unboxed_ary *uary, long add_len)
+{
+    long new_len = uary->len + add_len;
+
+    if (UNLIKELY(uary->len > ARY_MAX_SIZE - add_len)) {
+        rb_raise(rb_eIndexError, "index %ld too big", new_len);
+    }
+
+    if (UNLIKELY(uary->type == ary_shared)) {
+        if (new_len > ary_embed_capa(uary->ary)) {
+            VALUE shared_root = ARY_SHARED_ROOT(uary->ary);
+            if (ARY_SHARED_ROOT_OCCUPIED(shared_root)) {
+                if (uary->ptr - RARRAY_CONST_PTR(shared_root) + new_len <= RARRAY_LEN(shared_root)) {
+                    rb_ary_modify_check(uary->ary);
+
+                    uary_verify(uary);
+                    ary_verify(shared_root);
+                    return shared_root;
+                }
+                else {
+                    /* if array is shared, then it is likely it participate in push/shift pattern */
+                    uary_modify(uary);
+                    if (new_len > uary->capa - (uary->capa >> 6)) {
+                        uary_double_capa(uary, new_len);
+                    }
+                    ary_verify(uary->ary);
+                    return uary->ary;
+                }
+            }
+        }
+        uary_verify(uary);
+        uary_modify(uary);
+    }
+    else {
+        rb_ary_modify_check(uary->ary);
+    }
+
+    if (UNLIKELY(new_len > uary->capa)) {
+        uary_double_capa(uary, new_len);
+    }
+
+    uary_verify(uary);
+    return uary->ary;
 }
 
 static VALUE
@@ -1377,23 +1573,28 @@ ary_take_first_or_last(int argc, const VALUE *argv, VALUE ary, enum ary_take_pos
 VALUE
 rb_ary_push(VALUE ary, VALUE item)
 {
-    long idx = RARRAY_LEN((ary_verify(ary), ary));
-    VALUE target_ary = ary_ensure_room_for_push(ary, 1);
+    unboxed_ary uary;
+    unbox_ary(ary, &uary);
+
+    long idx = uary.len;
+    VALUE target_ary = uary_ensure_room_for_push(&uary, 1);
     RARRAY_PTR_USE(ary, ptr, {
         RB_OBJ_WRITE(target_ary, &ptr[idx], item);
     });
-    ARY_SET_LEN(ary, idx + 1);
-    ary_verify(ary);
+    uary_set_len(&uary, idx + 1);
+    uary_verify(&uary);
     return ary;
 }
 
 VALUE
 rb_ary_cat(VALUE ary, const VALUE *argv, long len)
 {
-    long oldlen = RARRAY_LEN(ary);
-    VALUE target_ary = ary_ensure_room_for_push(ary, len);
-    ary_memcpy0(ary, oldlen, len, argv, target_ary);
-    ARY_SET_LEN(ary, oldlen + len);
+    unboxed_ary uary;
+    unbox_ary(ary, &uary);
+
+    VALUE target_ary = uary_ensure_room_for_push(&uary, len);
+    ary_memcpy0(ary, uary.len, len, argv, target_ary);
+    uary_set_len(&uary, uary.len + len);
     return ary;
 }
 
@@ -8219,6 +8420,20 @@ rb_ary_deconstruct(VALUE ary)
     return ary;
 }
 
+static VALUE bench_ary_push(VALUE self, VALUE vsize, VALUE viter)
+{
+    long size = NUM2LONG(vsize);
+    VALUE ary = rb_ary_new2(size);
+    long iter = NUM2LONG(viter);
+    for (long index = 0; index < iter; index++) {
+        for (long i = 0; i < size; i++) {
+            rb_ary_push(ary, Qfalse);
+        }
+        rb_ary_clear(ary);
+    }
+    return Qnil;
+}
+
 /*
  *  An \Array object is an ordered, integer-indexed collection of objects,
  *  called _elements_;
@@ -8729,6 +8944,8 @@ Init_Array(void)
 
     rb_cArray  = rb_define_class("Array", rb_cObject);
     rb_include_module(rb_cArray, rb_mEnumerable);
+
+    rb_define_singleton_method(rb_cArray, "bench_ary_push", bench_ary_push, 2);
 
     rb_define_alloc_func(rb_cArray, empty_ary_alloc);
     rb_define_singleton_method(rb_cArray, "new", rb_ary_s_new, -1);
