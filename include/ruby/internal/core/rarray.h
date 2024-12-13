@@ -100,19 +100,6 @@ enum ruby_rarray_flags {
      * store array elements.  It was a bad idea to expose this to them.
      */
     RARRAY_EMBED_FLAG      = RUBY_FL_USER1,
-
-    /**
-     * When an array employs embedded strategy (see ::RARRAY_EMBED_FLAG), these
-     * bits  are used  to store  the number  of elements  actually filled  into
-     * ::RArray::ary.
-     *
-     * @internal
-     *
-     * 3rd parties must  not be aware that  there even is more than  one way to
-     * store array elements.  It was a bad idea to expose this to them.
-     */
-    RARRAY_EMBED_LEN_MASK  = RUBY_FL_USER9 | RUBY_FL_USER8 | RUBY_FL_USER7 | RUBY_FL_USER6 |
-                                 RUBY_FL_USER5 | RUBY_FL_USER4 | RUBY_FL_USER3
 };
 
 /**
@@ -130,17 +117,16 @@ struct RArray {
     /** Basic part, including flags and class. */
     struct RBasic basic;
 
+    /** Number of elements of the array. */
+    long len;
+
     /** Array's specific fields. */
     union {
-
         /**
          * Arrays  that  use separated  memory  region  for elements  use  this
          * pattern.
          */
         struct {
-
-            /** Number of elements of the array. */
-            long len;
 
             /** Auxiliary info. */
             union {
@@ -215,35 +201,6 @@ void rb_ary_ptr_use_end(VALUE a);
 RBIMPL_SYMBOL_EXPORT_END()
 
 RBIMPL_ATTR_PURE_UNLESS_DEBUG()
-RBIMPL_ATTR_ARTIFICIAL()
-/**
- * Queries the length of the array.
- *
- * @param[in]  ary  Array in question.
- * @return     Its number of elements.
- * @pre        `ary`  must  be  an  instance  of ::RArray,  and  must  has  its
- *             ::RARRAY_EMBED_FLAG flag set.
- *
- * @internal
- *
- * This was a macro  before.  It was inevitable to be  public, since macros are
- * global constructs.   But should it be  forever?  Now that it  is a function,
- * @shyouhei thinks  it could  just be  eliminated, hidden  into implementation
- * details.
- */
-static inline long
-RARRAY_EMBED_LEN(VALUE ary)
-{
-    RBIMPL_ASSERT_TYPE(ary, RUBY_T_ARRAY);
-    RBIMPL_ASSERT_OR_ASSUME(RB_FL_ANY_RAW(ary, RARRAY_EMBED_FLAG));
-
-    VALUE f = RBASIC(ary)->flags;
-    f &= RARRAY_EMBED_LEN_MASK;
-    f >>= RARRAY_EMBED_LEN_SHIFT;
-    return RBIMPL_CAST((long)f);
-}
-
-RBIMPL_ATTR_PURE_UNLESS_DEBUG()
 /**
  * Queries the length of the array.
  *
@@ -256,12 +213,7 @@ rb_array_len(VALUE a)
 {
     RBIMPL_ASSERT_TYPE(a, RUBY_T_ARRAY);
 
-    if (RB_FL_ANY_RAW(a, RARRAY_EMBED_FLAG)) {
-        return RARRAY_EMBED_LEN(a);
-    }
-    else {
-        return RARRAY(a)->as.heap.len;
-    }
+    return RARRAY(a)->len;
 }
 
 RBIMPL_ATTR_ARTIFICIAL()

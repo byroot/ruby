@@ -7188,33 +7188,15 @@ fn gen_send_cfunc(
 fn get_array_len(asm: &mut Assembler, array_opnd: Opnd) -> Opnd {
     asm_comment!(asm, "get array length for embedded or heap");
 
-    // Pull out the embed flag to check if it's an embedded array.
     let array_reg = match array_opnd {
         Opnd::InsnOut { .. } => array_opnd,
         _ => asm.load(array_opnd),
     };
-    let flags_opnd = Opnd::mem(VALUE_BITS, array_reg, RUBY_OFFSET_RBASIC_FLAGS);
-
-    // Get the length of the array
-    let emb_len_opnd = asm.and(flags_opnd, (RARRAY_EMBED_LEN_MASK as u64).into());
-    let emb_len_opnd = asm.rshift(emb_len_opnd, (RARRAY_EMBED_LEN_SHIFT as u64).into());
-
-    // Conditionally move the length of the heap array
-    let flags_opnd = Opnd::mem(VALUE_BITS, array_reg, RUBY_OFFSET_RBASIC_FLAGS);
-    asm.test(flags_opnd, (RARRAY_EMBED_FLAG as u64).into());
-
-    let array_reg = match array_opnd {
-        Opnd::InsnOut { .. } => array_opnd,
-        _ => asm.load(array_opnd),
-    };
-    let array_len_opnd = Opnd::mem(
+    return Opnd::mem(
         std::os::raw::c_long::BITS as u8,
         array_reg,
-        RUBY_OFFSET_RARRAY_AS_HEAP_LEN,
+        RUBY_OFFSET_RARRAY_LEN,
     );
-
-    // Select the array length value
-    asm.csel_nz(emb_len_opnd, array_len_opnd)
 }
 
 // Generate RARRAY_CONST_PTR (part of RARRAY_AREF)

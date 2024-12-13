@@ -382,8 +382,6 @@ module RubyVM::RJIT # :nodoc: all
   C::OPTIMIZED_METHOD_TYPE_STRUCT_AREF = Primitive.cexpr! %q{ SIZET2NUM(OPTIMIZED_METHOD_TYPE_STRUCT_AREF) }
   C::OPTIMIZED_METHOD_TYPE_STRUCT_ASET = Primitive.cexpr! %q{ SIZET2NUM(OPTIMIZED_METHOD_TYPE_STRUCT_ASET) }
   C::RARRAY_EMBED_FLAG = Primitive.cexpr! %q{ SIZET2NUM(RARRAY_EMBED_FLAG) }
-  C::RARRAY_EMBED_LEN_MASK = Primitive.cexpr! %q{ SIZET2NUM(RARRAY_EMBED_LEN_MASK) }
-  C::RARRAY_EMBED_LEN_SHIFT = Primitive.cexpr! %q{ SIZET2NUM(RARRAY_EMBED_LEN_SHIFT) }
   C::RHASH_PASS_AS_KEYWORDS = Primitive.cexpr! %q{ SIZET2NUM(RHASH_PASS_AS_KEYWORDS) }
   C::RMODULE_IS_REFINEMENT = Primitive.cexpr! %q{ SIZET2NUM(RMODULE_IS_REFINEMENT) }
   C::ROBJECT_EMBED = Primitive.cexpr! %q{ SIZET2NUM(ROBJECT_EMBED) }
@@ -768,11 +766,11 @@ module RubyVM::RJIT # :nodoc: all
     @RArray ||= CType::Struct.new(
       "RArray", Primitive.cexpr!("SIZEOF(struct RArray)"),
       basic: [self.RBasic, Primitive.cexpr!("OFFSETOF((*((struct RArray *)NULL)), basic)")],
+      len: [CType::Immediate.parse("long"), Primitive.cexpr!("OFFSETOF((*((struct RArray *)NULL)), len)")],
       as: [CType::Union.new(
         "", Primitive.cexpr!("SIZEOF(((struct RArray *)NULL)->as)"),
         heap: CType::Struct.new(
           "", Primitive.cexpr!("SIZEOF(((struct RArray *)NULL)->as.heap)"),
-          len: [CType::Immediate.parse("long"), Primitive.cexpr!("OFFSETOF(((struct RArray *)NULL)->as.heap, len)")],
           aux: [CType::Union.new(
             "", Primitive.cexpr!("SIZEOF(((struct RArray *)NULL)->as.heap.aux)"),
             capa: CType::Immediate.parse("long"),

@@ -48,8 +48,6 @@ VALUE rb_cArray_empty_frozen;
  * 1:   RARRAY_EMBED_FLAG
  *          The array is embedded (its contents follow the header, rather than
  *          being on a separately allocated buffer).
- * 3-9: RARRAY_EMBED_LEN
- *          The length of the array when RARRAY_EMBED_FLAG is set.
  * 12:  RARRAY_SHARED_ROOT_FLAG
  *          The array is a shared root that does reference counting. The buffer
  *          this array points to is owned by this array but may be pointed to
@@ -79,15 +77,10 @@ should_be_T_ARRAY(VALUE ary)
 }
 
 #define ARY_HEAP_PTR(a) (RUBY_ASSERT(!ARY_EMBED_P(a)), RARRAY(a)->as.heap.ptr)
-#define ARY_HEAP_LEN(a) (RUBY_ASSERT(!ARY_EMBED_P(a)), RARRAY(a)->as.heap.len)
 #define ARY_HEAP_CAPA(a) (RUBY_ASSERT(!ARY_EMBED_P(a)), RUBY_ASSERT(!ARY_SHARED_ROOT_P(a)), \
                           RARRAY(a)->as.heap.aux.capa)
 
 #define ARY_EMBED_PTR(a) (RUBY_ASSERT(ARY_EMBED_P(a)), RARRAY(a)->as.ary)
-#define ARY_EMBED_LEN(a) \
-    (RUBY_ASSERT(ARY_EMBED_P(a)), \
-     (long)((RBASIC(a)->flags >> RARRAY_EMBED_LEN_SHIFT) & \
-         (RARRAY_EMBED_LEN_MASK >> RARRAY_EMBED_LEN_SHIFT)))
 #define ARY_HEAP_SIZE(a) (RUBY_ASSERT(!ARY_EMBED_P(a)), RUBY_ASSERT(ARY_OWNS_HEAP_P(a)), ARY_CAPA(a) * sizeof(VALUE))
 
 #define ARY_OWNS_HEAP_P(a) (RUBY_ASSERT(should_be_T_ARRAY((VALUE)(a))), \
@@ -99,7 +92,7 @@ should_be_T_ARRAY(VALUE ary)
     ary_verify(a); \
 } while (0)
 
-#define FL_UNSET_EMBED(ary) FL_UNSET((ary), RARRAY_EMBED_FLAG|RARRAY_EMBED_LEN_MASK)
+#define FL_UNSET_EMBED(ary) FL_UNSET((ary), RARRAY_EMBED_FLAG)
 #define FL_SET_SHARED(ary) do { \
     RUBY_ASSERT(!ARY_EMBED_P(ary)); \
     FL_SET((ary), RARRAY_SHARED_FLAG); \
@@ -111,24 +104,8 @@ should_be_T_ARRAY(VALUE ary)
     RUBY_ASSERT(!OBJ_FROZEN(ary)); \
     RARRAY(ary)->as.heap.ptr = (p); \
 } while (0)
-#define ARY_SET_EMBED_LEN(ary, n) do { \
-    long tmp_n = (n); \
-    RUBY_ASSERT(ARY_EMBED_P(ary)); \
-    RBASIC(ary)->flags &= ~RARRAY_EMBED_LEN_MASK; \
-    RBASIC(ary)->flags |= (tmp_n) << RARRAY_EMBED_LEN_SHIFT; \
-} while (0)
-#define ARY_SET_HEAP_LEN(ary, n) do { \
-    RUBY_ASSERT(!ARY_EMBED_P(ary)); \
-    RARRAY(ary)->as.heap.len = (n); \
-} while (0)
 #define ARY_SET_LEN(ary, n) do { \
-    if (ARY_EMBED_P(ary)) { \
-        ARY_SET_EMBED_LEN((ary), (n)); \
-    } \
-    else { \
-        ARY_SET_HEAP_LEN((ary), (n)); \
-    } \
-    RUBY_ASSERT(RARRAY_LEN(ary) == (n)); \
+    RARRAY(ary)->len = (n); \
 } while (0)
 #define ARY_INCREASE_PTR(ary, n) do  { \
     RUBY_ASSERT(!ARY_EMBED_P(ary)); \
@@ -137,12 +114,7 @@ should_be_T_ARRAY(VALUE ary)
 } while (0)
 #define ARY_INCREASE_LEN(ary, n) do  { \
     RUBY_ASSERT(!OBJ_FROZEN(ary)); \
-    if (ARY_EMBED_P(ary)) { \
-        ARY_SET_EMBED_LEN((ary), RARRAY_LEN(ary)+(n)); \
-    } \
-    else { \
-        RARRAY(ary)->as.heap.len += (n); \
-    } \
+    RARRAY(ary)->len += (n); \
 } while (0)
 
 #define ARY_CAPA(ary) (ARY_EMBED_P(ary) ? ary_embed_capa(ary) : \
@@ -217,7 +189,7 @@ rb_ary_size_as_embedded(VALUE ary)
     size_t real_size;
 
     if (ARY_EMBED_P(ary)) {
-        real_size = ary_embed_size(ARY_EMBED_LEN(ary));
+        real_size = ary_embed_size(RARRAY_LEN(ary));
     }
     else if (rb_ary_embeddable_p(ary)) {
         real_size = ary_embed_size(ARY_HEAP_CAPA(ary));
@@ -241,7 +213,7 @@ ary_verify_(VALUE ary, const char *file, int line)
         VALUE root = ARY_SHARED_ROOT(ary);
         const VALUE *ptr = ARY_HEAP_PTR(ary);
         const VALUE *root_ptr = RARRAY_CONST_PTR(root);
-        long len = ARY_HEAP_LEN(ary), root_len = RARRAY_LEN(root);
+        long len = RARRAY_LEN(ary), root_len = RARRAY_LEN(root);
         RUBY_ASSERT(ARY_SHARED_ROOT_P(root) || OBJ_FROZEN(root));
         RUBY_ASSERT(root_ptr <= ptr && ptr + len <= root_ptr + root_len);
         ary_verify(root);
@@ -378,10 +350,8 @@ rb_ary_make_embedded(VALUE ary)
     RUBY_ASSERT(rb_ary_embeddable_p(ary));
     if (!ARY_EMBED_P(ary)) {
         const VALUE *buf = ARY_HEAP_PTR(ary);
-        long len = ARY_HEAP_LEN(ary);
-
+        long len = RARRAY_LEN(ary);
         FL_SET_EMBED(ary);
-        ARY_SET_EMBED_LEN(ary, len);
 
         MEMCPY((void *)ARY_EMBED_PTR(ary), (void *)buf, VALUE, len);
 
@@ -399,13 +369,12 @@ ary_resize_capa(VALUE ary, long capacity)
     if (capacity > ary_embed_capa(ary)) {
         size_t new_capa = capacity;
         if (ARY_EMBED_P(ary)) {
-            long len = ARY_EMBED_LEN(ary);
+            long len = RARRAY_LEN(ary);
             VALUE *ptr = ary_heap_alloc_buffer(capacity);
 
             MEMCPY(ptr, ARY_EMBED_PTR(ary), VALUE, len);
             FL_UNSET_EMBED(ary);
             ARY_SET_PTR(ary, ptr);
-            ARY_SET_HEAP_LEN(ary, len);
         }
         else {
             new_capa = ary_heap_realloc(ary, capacity);
@@ -414,7 +383,7 @@ ary_resize_capa(VALUE ary, long capacity)
     }
     else {
         if (!ARY_EMBED_P(ary)) {
-            long len = ARY_HEAP_LEN(ary);
+            long len = RARRAY_LEN(ary);
             long old_capa = ARY_HEAP_CAPA(ary);
             const VALUE *ptr = ARY_HEAP_PTR(ary);
 
@@ -423,7 +392,6 @@ ary_resize_capa(VALUE ary, long capacity)
             ary_heap_free_ptr(ary, ptr, old_capa);
 
             FL_SET_EMBED(ary);
-            ARY_SET_LEN(ary, len);
         }
     }
 
@@ -433,7 +401,7 @@ ary_resize_capa(VALUE ary, long capacity)
 static inline void
 ary_shrink_capa(VALUE ary)
 {
-    long capacity = ARY_HEAP_LEN(ary);
+    long capacity = RARRAY_LEN(ary);
     long old_capa = ARY_HEAP_CAPA(ary);
     RUBY_ASSERT(!ARY_SHARED_P(ary));
     RUBY_ASSERT(old_capa >= capacity);
@@ -489,8 +457,8 @@ rb_ary_reset(VALUE ary)
         rb_ary_unshare(ary);
     }
 
+    ARY_SET_LEN(ary, 0);
     FL_SET_EMBED(ary);
-    ARY_SET_EMBED_LEN(ary, 0);
 }
 
 static VALUE
@@ -540,7 +508,6 @@ rb_ary_cancel_sharing(VALUE ary)
             FL_SET_EMBED(ary);
             MEMCPY((VALUE *)ARY_EMBED_PTR(ary), ptr, VALUE, len);
             rb_ary_decrement_share(shared_root);
-            ARY_SET_EMBED_LEN(ary, len);
         }
         else if (ARY_SHARED_ROOT_OCCUPIED(shared_root) && len > ((shared_len = RARRAY_LEN(shared_root))>>1)) {
             long shift = RARRAY_CONST_PTR(ary) - RARRAY_CONST_PTR(shared_root);
@@ -665,7 +632,7 @@ rb_ary_shared_with_p(VALUE ary1, VALUE ary2)
     if (!ARY_EMBED_P(ary1) && ARY_SHARED_P(ary1) &&
             !ARY_EMBED_P(ary2) && ARY_SHARED_P(ary2) &&
             ARY_SHARED_ROOT(ary1) == ARY_SHARED_ROOT(ary2) &&
-            ARY_HEAP_LEN(ary1) == ARY_HEAP_LEN(ary2)) {
+            RARRAY_LEN(ary1) == RARRAY_LEN(ary2)) {
         return Qtrue;
     }
     return Qfalse;
@@ -681,7 +648,7 @@ ary_alloc_embed(VALUE klass, long capa)
                      size, 0);
     /* Created array is:
      *   FL_SET_EMBED((VALUE)ary);
-     *   ARY_SET_EMBED_LEN((VALUE)ary, 0);
+     *   ARY_SET_LEN((VALUE)ary, 0);
      */
     return (VALUE)ary;
 }
@@ -725,7 +692,7 @@ ary_new(VALUE klass, long capa)
         RUBY_ASSERT(!ARY_EMBED_P(ary));
 
         ARY_SET_PTR(ary, ary_heap_alloc_buffer(capa));
-        ARY_SET_HEAP_LEN(ary, 0);
+        ARY_SET_LEN(ary, 0);
     }
 
     return ary;
@@ -792,7 +759,7 @@ ec_ary_alloc_embed(rb_execution_context_t *ec, VALUE klass, long capa)
             size, ec);
     /* Created array is:
      *   FL_SET_EMBED((VALUE)ary);
-     *   ARY_SET_EMBED_LEN((VALUE)ary, 0);
+     *   ARY_SET_LEN((VALUE)ary, 0);
      */
     return (VALUE)ary;
 }
@@ -829,7 +796,7 @@ ec_ary_new(rb_execution_context_t *ec, VALUE klass, long capa)
         RUBY_ASSERT(!ARY_EMBED_P(ary));
 
         ARY_SET_PTR(ary, ary_heap_alloc_buffer(capa));
-        ARY_SET_HEAP_LEN(ary, 0);
+        ARY_SET_LEN(ary, 0);
     }
 
     return ary;
@@ -910,7 +877,7 @@ rb_setup_fake_ary(struct RArray *fake_ary, const VALUE *list, long len)
 
     // bypass frozen checks
     fake_ary->as.heap.ptr = list;
-    fake_ary->as.heap.len = len;
+    fake_ary->len = len;
     fake_ary->as.heap.aux.capa = len;
     return (VALUE)fake_ary;
 }
@@ -955,7 +922,7 @@ ary_make_shared(VALUE ary)
             ary_memcpy(shared, 0, len, RARRAY_CONST_PTR(ary));
 
             FL_UNSET_EMBED(ary);
-            ARY_SET_HEAP_LEN(ary, len);
+            ARY_SET_LEN(ary, len);
             ARY_SET_PTR(ary, ptr);
         }
         else {
@@ -983,7 +950,6 @@ ary_make_substitution(VALUE ary)
         RUBY_ASSERT(ARY_EMBED_P(subst));
 
         ary_memcpy(subst, 0, len, RARRAY_CONST_PTR(ary));
-        ARY_SET_EMBED_LEN(subst, len);
         return subst;
     }
     else {
@@ -1131,7 +1097,7 @@ rb_ary_initialize(int argc, VALUE *argv, VALUE ary)
     if (argc == 0) {
         rb_ary_reset(ary);
         RUBY_ASSERT(ARY_EMBED_P(ary));
-        RUBY_ASSERT(ARY_EMBED_LEN(ary) == 0);
+        RUBY_ASSERT(RARRAY_LEN(ary) == 0);
         if (rb_block_given_p()) {
             rb_warning("given block not used");
         }
@@ -1239,7 +1205,7 @@ ary_make_partial(VALUE ary, VALUE klass, long offset, long len)
     if ((size_t)len <= embed_capa) {
         FL_SET_EMBED(result);
         ary_memcpy(result, 0, len, RARRAY_CONST_PTR(ary) + offset);
-        ARY_SET_EMBED_LEN(result, len);
+        ARY_SET_LEN(result, len);
     }
     else {
         VALUE shared = ary_make_shared(ary);
@@ -1279,7 +1245,7 @@ ary_make_partial_step(VALUE ary, VALUE klass, long offset, long len, long step)
         const VALUE *values = RARRAY_CONST_PTR(ary);
 
         RB_OBJ_WRITE(result, ptr, values[offset]);
-        ARY_SET_EMBED_LEN(result, 1);
+        ARY_SET_LEN(result, 1);
         return result;
     }
     else if (step < 0 && step < -len) {
@@ -1301,7 +1267,7 @@ ary_make_partial_step(VALUE ary, VALUE klass, long offset, long len, long step)
             RB_OBJ_WRITE(result, ptr+i, values[j]);
             j += step;
         }
-        ARY_SET_EMBED_LEN(result, len);
+        ARY_SET_LEN(result, len);
     }
     else {
         const VALUE *values = RARRAY_CONST_PTR(ary);
@@ -2305,7 +2271,7 @@ rb_ary_resize(VALUE ary, long len)
         ARY_SET_LEN(ary, len);
     }
     else if (ARY_EMBED_P(ary)) {
-        ARY_SET_EMBED_LEN(ary, len);
+        ARY_SET_LEN(ary, len);
     }
     else if (len <= ary_embed_capa(ary)) {
         const VALUE *ptr = ARY_HEAP_PTR(ary);
@@ -2315,7 +2281,7 @@ rb_ary_resize(VALUE ary, long len)
         FL_SET_EMBED(ary);
 
         MEMCPY((VALUE *)ARY_EMBED_PTR(ary), ptr, VALUE, len); /* WB: no new reference */
-        ARY_SET_EMBED_LEN(ary, len);
+        ARY_SET_LEN(ary, len);
 
         if (is_malloc_ptr) ruby_sized_xfree((void *)ptr, ptr_capa);
     }
@@ -2324,7 +2290,7 @@ rb_ary_resize(VALUE ary, long len)
             size_t new_capa = ary_heap_realloc(ary, len);
             ARY_SET_CAPA(ary, new_capa);
         }
-        ARY_SET_HEAP_LEN(ary, len);
+        ARY_SET_LEN(ary, len);
     }
     ary_verify(ary);
     return ary;
@@ -3406,11 +3372,10 @@ rb_ary_sort_bang(VALUE ary)
                 rb_ary_unshare(ary);
                 FL_SET_EMBED(ary);
             }
-            if (ARY_EMBED_LEN(tmp) > ARY_CAPA(ary)) {
-                ary_resize_capa(ary, ARY_EMBED_LEN(tmp));
+            if (RARRAY_LEN(tmp) > ARY_CAPA(ary)) {
+                ary_resize_capa(ary, RARRAY_LEN(tmp));
             }
-            ary_memcpy(ary, 0, ARY_EMBED_LEN(tmp), ARY_EMBED_PTR(tmp));
-            ARY_SET_LEN(ary, ARY_EMBED_LEN(tmp));
+            ary_memcpy(ary, 0, RARRAY_LEN(tmp), ARY_EMBED_PTR(tmp));
         }
         else {
             if (!ARY_EMBED_P(ary) && ARY_HEAP_PTR(ary) == ARY_HEAP_PTR(tmp)) {
@@ -3430,13 +3395,13 @@ rb_ary_sort_bang(VALUE ary)
                     ary_heap_free(ary);
                 }
                 ARY_SET_PTR(ary, ARY_HEAP_PTR(tmp));
-                ARY_SET_HEAP_LEN(ary, len);
-                ARY_SET_CAPA(ary, ARY_HEAP_LEN(tmp));
+                ARY_SET_LEN(ary, len);
+                ARY_SET_CAPA(ary, RARRAY_LEN(tmp));
             }
             /* tmp was lost ownership for the ptr */
             FL_UNSET(tmp, FL_FREEZE);
+            ARY_SET_LEN(tmp, 0);
             FL_SET_EMBED(tmp);
-            ARY_SET_EMBED_LEN(tmp, 0);
             FL_SET(tmp, FL_FREEZE);
         }
         /* tmp will be GC'ed. */
@@ -4683,12 +4648,12 @@ rb_ary_replace(VALUE copy, VALUE orig)
     if (RARRAY_LEN(orig) <= ary_embed_capa(copy)) {
         RUBY_ASSERT(ARY_EMBED_P(copy));
         ary_memcpy(copy, 0, RARRAY_LEN(orig), RARRAY_CONST_PTR(orig));
-        ARY_SET_EMBED_LEN(copy, RARRAY_LEN(orig));
+        ARY_SET_LEN(copy, RARRAY_LEN(orig));
     }
     /* orig is embedded but copy does not have enough space to embed the
      * contents of orig. */
     else if (ARY_EMBED_P(orig)) {
-        long len = ARY_EMBED_LEN(orig);
+        long len = RARRAY_LEN(orig);
         VALUE *ptr = ary_heap_alloc_buffer(len);
 
         FL_UNSET_EMBED(copy);
@@ -4706,7 +4671,7 @@ rb_ary_replace(VALUE copy, VALUE orig)
         VALUE shared_root = ary_make_shared(orig);
         FL_UNSET_EMBED(copy);
         ARY_SET_PTR(copy, ARY_HEAP_PTR(orig));
-        ARY_SET_LEN(copy, ARY_HEAP_LEN(orig));
+        ARY_SET_LEN(copy, RARRAY_LEN(orig));
         rb_ary_set_shared(copy, shared_root);
     }
     ary_verify(copy);
@@ -4731,8 +4696,8 @@ rb_ary_clear(VALUE ary)
     rb_ary_modify_check(ary);
     if (ARY_SHARED_P(ary)) {
         rb_ary_unshare(ary);
+        ARY_SET_LEN(ary, 0);
         FL_SET_EMBED(ary);
-        ARY_SET_EMBED_LEN(ary, 0);
     }
     else {
         ARY_SET_LEN(ary, 0);
@@ -6632,7 +6597,7 @@ rb_ary_flatten_bang(int argc, VALUE *argv, VALUE ary)
     }
     if (!(mod = ARY_EMBED_P(result))) rb_ary_freeze(result);
     rb_ary_replace(ary, result);
-    if (mod) ARY_SET_EMBED_LEN(result, 0);
+    if (mod) ARY_SET_LEN(result, 0);
 
     return ary;
 }
