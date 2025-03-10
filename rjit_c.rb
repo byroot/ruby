@@ -861,7 +861,7 @@ module RubyVM::RJIT # :nodoc: all
     @iseq_inline_constant_cache ||= CType::Struct.new(
       "iseq_inline_constant_cache", Primitive.cexpr!("SIZEOF(struct iseq_inline_constant_cache)"),
       entry: [CType::Pointer.new { self.iseq_inline_constant_cache_entry }, Primitive.cexpr!("OFFSETOF((*((struct iseq_inline_constant_cache *)NULL)), entry)")],
-      segments: [CType::Pointer.new { self.ID }, Primitive.cexpr!("OFFSETOF((*((struct iseq_inline_constant_cache *)NULL)), segments)")],
+      segments: [CType::Pointer.new { self.ID }, Primitive.cexpr!("OFFSETOF((*((struct iseq_inline_constant_cache *)NULL)), tagged_segments)")], # TODO: remove lower bits
     )
   end
 
