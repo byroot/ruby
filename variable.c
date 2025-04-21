@@ -1571,7 +1571,7 @@ rb_evict_ivars_to_hash(VALUE obj)
     rb_obj_copy_ivs_to_hash_table(obj, table);
     rb_shape_t *shape = rb_shape_get_shape(obj);
     if (rb_shape_has_object_id(shape)) {
-        st_insert(table, id_object_id, rb_obj_id(obj));
+        st_insert(table, internal_object_id, rb_obj_id(obj));
     }
     rb_obj_convert_to_too_complex(obj, table);
 

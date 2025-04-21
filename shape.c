@@ -732,7 +732,7 @@ rb_shape_object_id_shape(VALUE obj)
     }
 
     bool dont_care;
-    rb_shape_t* next_shape = get_next_shape_internal(shape, (ID)id_object_id, SHAPE_OBJ_ID, &dont_care, true);
+    rb_shape_t* next_shape = get_next_shape_internal(shape, (ID)internal_object_id, SHAPE_OBJ_ID, &dont_care, true);
     RUBY_ASSERT(next_shape);
     return next_shape;
 }
@@ -1297,7 +1297,7 @@ Init_default_shapes(void)
 
     id_frozen = rb_make_internal_id();
     id_t_object = rb_make_internal_id();
-    id_object_id = rb_make_internal_id();
+    internal_object_id = rb_make_internal_id();
 
 #ifdef HAVE_MMAP
     size_t shape_cache_mmap_size = rb_size_mul_or_raise(REDBLACK_CACHE_SIZE, sizeof(redblack_node_t), rb_eRuntimeError);
