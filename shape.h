@@ -39,6 +39,8 @@ typedef uint32_t redblack_id_t;
 # define OBJ_TOO_COMPLEX_SHAPE_ID (SPECIAL_CONST_SHAPE_ID + 1)
 # define FIRST_T_OBJECT_SHAPE_ID (OBJ_TOO_COMPLEX_SHAPE_ID + 1)
 
+static ID id_object_id;
+
 typedef struct redblack_node redblack_node_t;
 
 struct rb_shape {

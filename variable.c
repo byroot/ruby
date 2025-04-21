@@ -1569,6 +1569,10 @@ rb_evict_ivars_to_hash(VALUE obj)
 
     // Evacuate all previous values from shape into id_table
     rb_obj_copy_ivs_to_hash_table(obj, table);
+    rb_shape_t *shape = rb_shape_get_shape(obj);
+    if (rb_shape_has_object_id(shape)) {
+        st_insert(table, id_object_id, rb_obj_id(obj));
+    }
     rb_obj_convert_to_too_complex(obj, table);
 
     RUBY_ASSERT(rb_shape_obj_too_complex(obj));
@@ -1652,8 +1656,8 @@ general_ivar_set_at(VALUE obj, rb_shape_t *target_shape, VALUE val, void *data,
     attr_index_t index = target_shape->next_iv_index - 1;
     if (index >= current_shape->capacity) {
         shape_resize_ivptr_func(obj, current_shape->capacity, target_shape->capacity, data);
-        set_shape_func(obj, target_shape, data);
     }
+    set_shape_func(obj, target_shape, data);
 
     VALUE *table = shape_ivptr_func(obj, data);
     RB_OBJ_WRITE(obj, &table[index], val);
@@ -2080,6 +2084,7 @@ iterate_over_shapes_with_callback(rb_shape_t *shape, rb_ivar_foreach_callback_fu
 {
     switch ((enum shape_type)shape->type) {
       case SHAPE_ROOT:
+      case SHAPE_OBJ_ID:
       case SHAPE_T_OBJECT:
         return false;
       case SHAPE_IVAR:
@@ -2116,7 +2121,6 @@ iterate_over_shapes_with_callback(rb_shape_t *shape, rb_ivar_foreach_callback_fu
       case SHAPE_FROZEN:
         return iterate_over_shapes_with_callback(rb_shape_get_parent(shape), callback, itr_data);
       case SHAPE_OBJ_TOO_COMPLEX:
-      default:
         rb_bug("Unreachable");
     }
 }

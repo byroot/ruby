@@ -45,7 +45,6 @@
 
 static ID id_frozen;
 static ID id_t_object;
-static ID id_object_id;
 
 #define LEAF 0
 #define BLACK 0x0
@@ -474,8 +473,10 @@ rb_shape_alloc_new_child(ID id, rb_shape_t * shape, enum shape_type shape_type)
     rb_shape_t * new_shape = rb_shape_alloc(id, shape, shape_type);
 
     switch (shape_type) {
-      case SHAPE_IVAR:
       case SHAPE_OBJ_ID:
+        new_shape->flags |= SHAPE_FL_HAS_OBJECT_ID;
+        // fallthrough
+      case SHAPE_IVAR:
         if (UNLIKELY(shape->next_iv_index >= shape->capacity)) {
             RUBY_ASSERT(shape->next_iv_index == shape->capacity);
             new_shape->capacity = (uint32_t)rb_malloc_grow_capa(shape->capacity, sizeof(VALUE));

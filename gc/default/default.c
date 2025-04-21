@@ -1571,10 +1571,16 @@ rb_gc_impl_object_id(void *objspace_ptr, VALUE obj)
     rb_shape_t *shape = rb_shape_get_shape(obj);
 
     if (shape->type == SHAPE_OBJ_TOO_COMPLEX) {
-        // TODO: too_complex?
-        // If shareable must lock
-        // Otherwise safe to find_or_insert
-        rb_bug("Not yet implemented");
+        unsigned int lock_lev = rb_gc_vm_lock(); // we could no lock if not shareable
+        id = rb_attr_get(obj, id_object_id); // TODO: internal ID
+        if (NIL_P(id)) {
+            id = ULL2NUM(objspace->next_object_id);
+            objspace->next_object_id += OBJ_ID_INCREMENT;
+            rb_ivar_set_internal(obj, id_object_id, id);
+        }
+
+        rb_gc_vm_unlock(lock_lev);
+        return id;
     }
 
     if (rb_shape_has_object_id(shape)) {
@@ -1594,31 +1600,31 @@ rb_gc_impl_object_id(void *objspace_ptr, VALUE obj)
         return id;
     }
 
-    unsigned int lev = rb_gc_vm_lock();
-    if (FL_TEST(obj, FL_SEEN_OBJ_ID)) {
-        st_data_t val;
-        if (st_lookup(objspace->obj_to_id_tbl, (st_data_t)obj, &val)) {
-            id = (VALUE)val;
-        }
-        else {
-            rb_bug("rb_gc_impl_object_id: FL_SEEN_OBJ_ID flag set but not found in table");
-        }
-    }
-    else {
-        GC_ASSERT(!st_lookup(objspace->obj_to_id_tbl, (st_data_t)obj, NULL));
-
-        id = ULL2NUM(objspace->next_object_id);
-        objspace->next_object_id += OBJ_ID_INCREMENT;
-
-        st_insert(objspace->obj_to_id_tbl, (st_data_t)obj, (st_data_t)id);
-        if (RB_UNLIKELY(objspace->id_to_obj_tbl)) {
-            st_insert(objspace->id_to_obj_tbl, (st_data_t)id, (st_data_t)obj);
-        }
-        FL_SET(obj, FL_SEEN_OBJ_ID);
-    }
-    rb_gc_vm_unlock(lev);
-
-    return id;
+    // unsigned int lev = rb_gc_vm_lock();
+    // if (FL_TEST(obj, FL_SEEN_OBJ_ID)) {
+    //     st_data_t val;
+    //     if (st_lookup(objspace->obj_to_id_tbl, (st_data_t)obj, &val)) {
+    //         id = (VALUE)val;
+    //     }
+    //     else {
+    //         rb_bug("rb_gc_impl_object_id: FL_SEEN_OBJ_ID flag set but not found in table");
+    //     }
+    // }
+    // else {
+    //     GC_ASSERT(!st_lookup(objspace->obj_to_id_tbl, (st_data_t)obj, NULL));
+    //
+    //     id = ULL2NUM(objspace->next_object_id);
+    //     objspace->next_object_id += OBJ_ID_INCREMENT;
+    //
+    //     st_insert(objspace->obj_to_id_tbl, (st_data_t)obj, (st_data_t)id);
+    //     if (RB_UNLIKELY(objspace->id_to_obj_tbl)) {
+    //         st_insert(objspace->id_to_obj_tbl, (st_data_t)id, (st_data_t)obj);
+    //     }
+    //     FL_SET(obj, FL_SEEN_OBJ_ID);
+    // }
+    // rb_gc_vm_unlock(lev);
+    //
+    // return id;
 }
 
 static int
