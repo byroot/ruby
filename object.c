@@ -348,17 +348,12 @@ rb_obj_copy_ivar(VALUE dest, VALUE obj)
         return;
     }
 
-    // The copy should be mutable, so we don't want the frozen shape
-    if (rb_shape_frozen_shape_p(src_shape)) {
-        shape_to_set_on_dest = rb_shape_get_parent(src_shape);
-    }
-
     src_buf = ROBJECT_IVPTR(obj);
     dest_buf = ROBJECT_IVPTR(dest);
 
     rb_shape_t * initial_shape = rb_shape_get_shape(dest);
 
-    if (initial_shape->heap_index != src_shape->heap_index) {
+    if (initial_shape->heap_index != src_shape->heap_index || !rb_shape_canonical_p(src_shape)) {
         RUBY_ASSERT(initial_shape->type == SHAPE_T_OBJECT);
 
         shape_to_set_on_dest = rb_shape_rebuild_shape(initial_shape, src_shape);
