@@ -1568,6 +1568,32 @@ rb_gc_impl_object_id(void *objspace_ptr, VALUE obj)
     VALUE id;
     rb_objspace_t *objspace = objspace_ptr;
 
+    rb_shape_t *shape = rb_shape_get_shape(obj);
+
+    if (shape->type == SHAPE_OBJ_TOO_COMPLEX) {
+        // TODO: too_complex?
+        // If shareable must lock
+        // Otherwise safe to find_or_insert
+        rb_bug("Not yet implemented");
+    }
+
+    if (rb_shape_has_object_id(shape)) {
+        rb_shape_t *object_id_shape = rb_shape_object_id_shape(obj);
+        return rb_ivar_at(obj, object_id_shape);
+    }
+    else {
+        unsigned int lock_lev = rb_gc_vm_lock();
+
+        id = ULL2NUM(objspace->next_object_id);
+        objspace->next_object_id += OBJ_ID_INCREMENT;
+
+        rb_shape_t *object_id_shape = rb_shape_object_id_shape(obj);
+        rb_ivar_set_at_internal(obj, object_id_shape, id);
+
+        rb_gc_vm_unlock(lock_lev);
+        return id;
+    }
+
     unsigned int lev = rb_gc_vm_lock();
     if (FL_TEST(obj, FL_SEEN_OBJ_ID)) {
         st_data_t val;

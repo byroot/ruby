@@ -65,6 +65,7 @@ struct redblack_node {
 enum shape_type {
     SHAPE_ROOT,
     SHAPE_IVAR,
+    SHAPE_OBJ_ID,
     SHAPE_FROZEN,
     SHAPE_T_OBJECT,
     SHAPE_OBJ_TOO_COMPLEX,
@@ -166,8 +167,13 @@ rb_shape_t* rb_shape_transition_shape_frozen(VALUE obj);
 bool rb_shape_transition_shape_remove_ivar(VALUE obj, ID id, rb_shape_t *shape, VALUE * removed);
 rb_shape_t* rb_shape_get_next(rb_shape_t* shape, VALUE obj, ID id);
 rb_shape_t* rb_shape_get_next_no_warnings(rb_shape_t* shape, VALUE obj, ID id);
+rb_shape_t* rb_shape_object_id_shape(VALUE obj);
+bool rb_shape_has_object_id(rb_shape_t *shape);
+attr_index_t rb_shape_object_id_index(rb_shape_t *shape);
+
 
 rb_shape_t * rb_shape_rebuild_shape(rb_shape_t * initial_shape, rb_shape_t * dest_shape);
+
 
 static inline bool
 rb_shape_canonical_p(rb_shape_t *shape)
