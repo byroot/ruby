@@ -1578,8 +1578,8 @@ general_ivar_set(VALUE obj, ID id, VALUE val, void *data,
     if (!rb_shape_get_iv_index(current_shape, id, &index)) {
         result.existing = false;
 
-        index = current_shape->next_iv_index;
-        if (index >= MAX_IVARS) {
+        index = current_shape->next_field_index;
+        if (index >= MAX_FIELDS) {
             rb_raise(rb_eArgError, "too many instance variables");
         }
 
@@ -1594,7 +1594,7 @@ general_ivar_set(VALUE obj, ID id, VALUE val, void *data,
         }
 
         RUBY_ASSERT(next_shape->type == SHAPE_IVAR);
-        RUBY_ASSERT(index == (next_shape->next_iv_index - 1));
+        RUBY_ASSERT(index == (next_shape->next_field_index - 1));
         set_shape_func(obj, next_shape, data);
     }
 
@@ -2013,7 +2013,7 @@ iterate_over_shapes_with_callback(rb_shape_t *shape, rb_ivar_foreach_callback_fu
             iv_list = itr_data->ivtbl->as.shape.ivptr;
             break;
         }
-        VALUE val = iv_list[shape->next_iv_index - 1];
+        VALUE val = iv_list[shape->next_field_index - 1];
         if (!UNDEF_P(val)) {
             switch (callback(shape->edge_name, val, itr_data->arg)) {
               case ST_CHECK:
@@ -2210,10 +2210,10 @@ rb_ivar_count(VALUE obj)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
-        return ROBJECT_IV_COUNT(obj);
+        return ROBJECT_FIELDS_COUNT(obj);
       case T_CLASS:
       case T_MODULE:
-        return RCLASS_IV_COUNT(obj);
+        return RCLASS_FIELDS_COUNT(obj);
       default:
         if (FL_TEST(obj, FL_EXIVAR)) {
             struct gen_ivtbl *ivtbl;

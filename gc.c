@@ -1928,7 +1928,7 @@ rb_obj_memsize_of(VALUE obj)
             size += rb_st_memsize(ROBJECT_IV_HASH(obj));
         }
         else if (!(RBASIC(obj)->flags & ROBJECT_EMBED)) {
-            size += ROBJECT_IV_CAPACITY(obj) * sizeof(VALUE);
+            size += ROBJECT_FIELDS_CAPACITY(obj) * sizeof(VALUE);
         }
         break;
       case T_MODULE:
@@ -1937,7 +1937,7 @@ rb_obj_memsize_of(VALUE obj)
             size += rb_id_table_memsize(RCLASS_M_TBL(obj));
         }
         // class IV sizes are allocated as powers of two
-        size += SIZEOF_VALUE << bit_length(RCLASS_IV_COUNT(obj));
+        size += SIZEOF_VALUE << bit_length(RCLASS_FIELDS_COUNT(obj));
         if (RCLASS_CVC_TBL(obj)) {
             size += rb_id_table_memsize(RCLASS_CVC_TBL(obj));
         }
@@ -2716,7 +2716,7 @@ rb_gc_mark_children(void *objspace, VALUE obj)
             gc_mark_tbl_no_pin((st_table *)RCLASS_IVPTR(obj));
         }
         else {
-            for (attr_index_t i = 0; i < RCLASS_IV_COUNT(obj); i++) {
+            for (attr_index_t i = 0; i < RCLASS_FIELDS_COUNT(obj); i++) {
                 gc_mark_internal(RCLASS_IVPTR(obj)[i]);
             }
         }
@@ -2807,7 +2807,7 @@ rb_gc_mark_children(void *objspace, VALUE obj)
         else {
             const VALUE * const ptr = ROBJECT_IVPTR(obj);
 
-            uint32_t len = ROBJECT_IV_COUNT(obj);
+            uint32_t len = ROBJECT_FIELDS_COUNT(obj);
             for (uint32_t i = 0; i < len; i++) {
                 gc_mark_internal(ptr[i]);
             }
@@ -2817,7 +2817,7 @@ rb_gc_mark_children(void *objspace, VALUE obj)
             VALUE klass = RBASIC_CLASS(obj);
 
             // Increment max_iv_count if applicable, used to determine size pool allocation
-            attr_index_t num_of_ivs = shape->next_iv_index;
+            attr_index_t num_of_ivs = shape->next_field_index;
             if (RCLASS_EXT(klass)->max_iv_count < num_of_ivs) {
                 RCLASS_EXT(klass)->max_iv_count = num_of_ivs;
             }
@@ -2893,7 +2893,7 @@ rb_gc_obj_optimal_size(VALUE obj)
             return sizeof(struct RObject);
         }
         else {
-            return rb_obj_embedded_size(ROBJECT_IV_CAPACITY(obj));
+            return rb_obj_embedded_size(ROBJECT_FIELDS_CAPACITY(obj));
         }
 
       case T_STRING:
@@ -3137,16 +3137,16 @@ gc_ref_update_object(void *objspace, VALUE v)
     }
 
     size_t slot_size = rb_gc_obj_slot_size(v);
-    size_t embed_size = rb_obj_embedded_size(ROBJECT_IV_CAPACITY(v));
+    size_t embed_size = rb_obj_embedded_size(ROBJECT_FIELDS_CAPACITY(v));
     if (slot_size >= embed_size && !RB_FL_TEST_RAW(v, ROBJECT_EMBED)) {
         // Object can be re-embedded
-        memcpy(ROBJECT(v)->as.ary, ptr, sizeof(VALUE) * ROBJECT_IV_COUNT(v));
+        memcpy(ROBJECT(v)->as.ary, ptr, sizeof(VALUE) * ROBJECT_FIELDS_COUNT(v));
         RB_FL_SET_RAW(v, ROBJECT_EMBED);
         xfree(ptr);
         ptr = ROBJECT(v)->as.ary;
     }
 
-    for (uint32_t i = 0; i < ROBJECT_IV_COUNT(v); i++) {
+    for (uint32_t i = 0; i < ROBJECT_FIELDS_COUNT(v); i++) {
         UPDATE_IF_MOVED(objspace, ptr[i]);
     }
 }
@@ -3652,7 +3652,7 @@ rb_gc_update_object_references(void *objspace, VALUE obj)
             gc_ref_update_table_values_only(RCLASS_IV_HASH(obj));
         }
         else {
-            for (attr_index_t i = 0; i < RCLASS_IV_COUNT(obj); i++) {
+            for (attr_index_t i = 0; i < RCLASS_FIELDS_COUNT(obj); i++) {
                 UPDATE_IF_MOVED(objspace, RCLASS_IVPTR(obj)[i]);
             }
         }
@@ -4340,7 +4340,7 @@ rb_raw_obj_info_buitin_type(char *const buff, const size_t buff_size, const VALU
                     APPEND_F("(too_complex) len:%zu", hash_len);
                 }
                 else {
-                    uint32_t len = ROBJECT_IV_CAPACITY(obj);
+                    uint32_t len = ROBJECT_FIELDS_CAPACITY(obj);
 
                     if (RBASIC(obj)->flags & ROBJECT_EMBED) {
                         APPEND_F("(embed) len:%d", len);

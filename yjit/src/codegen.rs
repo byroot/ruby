@@ -3126,7 +3126,7 @@ fn gen_set_ivar(
             let needs_extension = unsafe { (*current_shape).capacity != (*next_shape).capacity };
 
             // We can write to the object, but we need to transition the shape
-            let ivar_index = unsafe { (*current_shape).next_iv_index } as usize;
+            let ivar_index = unsafe { (*current_shape).next_field_index } as usize;
 
             let needs_extension = if needs_extension {
                 Some((current_capacity, unsafe { (*next_shape).capacity }))

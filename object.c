@@ -140,7 +140,7 @@ rb_class_allocate_instance(VALUE klass)
 #if RUBY_DEBUG
     RUBY_ASSERT(!rb_shape_obj_too_complex(obj));
     VALUE *ptr = ROBJECT_IVPTR(obj);
-    for (size_t i = 0; i < ROBJECT_IV_CAPACITY(obj); i++) {
+    for (size_t i = 0; i < ROBJECT_FIELDS_CAPACITY(obj); i++) {
         ptr[i] = Qundef;
     }
 #endif
@@ -339,7 +339,7 @@ rb_obj_copy_ivar(VALUE dest, VALUE obj)
         return;
     }
 
-    uint32_t src_num_ivs = RBASIC_IV_COUNT(obj);
+    uint32_t src_num_ivs = RBASIC_FIELDS_COUNT(obj);
     rb_shape_t *shape_to_set_on_dest = src_shape;
     VALUE * src_buf;
     VALUE * dest_buf;

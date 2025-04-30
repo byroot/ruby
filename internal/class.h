@@ -130,7 +130,7 @@ RCLASS_SET_IV_HASH(VALUE obj, const st_table *tbl)
 }
 
 static inline uint32_t
-RCLASS_IV_COUNT(VALUE obj)
+RCLASS_FIELDS_COUNT(VALUE obj)
 {
     RUBY_ASSERT(RB_TYPE_P(obj, RUBY_T_CLASS) || RB_TYPE_P(obj, RUBY_T_MODULE));
     if (rb_shape_obj_too_complex(obj)) {
@@ -147,7 +147,7 @@ RCLASS_IV_COUNT(VALUE obj)
         return count;
     }
     else {
-        return rb_shape_get_shape_by_id(RCLASS_SHAPE_ID(obj))->next_iv_index;
+        return rb_shape_get_shape_by_id(RCLASS_SHAPE_ID(obj))->next_field_index;
     }
 }
 
