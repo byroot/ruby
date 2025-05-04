@@ -641,26 +641,26 @@ rb_shape_transition_shape_remove_ivar(VALUE obj, ID id, rb_shape_t *shape, VALUE
 
         RUBY_ASSERT(new_shape->next_field_index == shape->next_field_index - 1);
 
-        VALUE *ivptr;
+        VALUE *fields;
         switch(BUILTIN_TYPE(obj)) {
           case T_CLASS:
           case T_MODULE:
-            ivptr = RCLASS_IVPTR(obj);
+            fields = RCLASS_FIELDS(obj);
             break;
           case T_OBJECT:
-            ivptr = ROBJECT_IVPTR(obj);
+            fields = ROBJECT_FIELDS(obj);
             break;
           default: {
-            struct gen_ivtbl *ivtbl;
-            rb_gen_ivtbl_get(obj, id, &ivtbl);
-            ivptr = ivtbl->as.shape.ivptr;
+            struct gen_fields_tbl *fields_tbl;
+            rb_gen_fields_tbl_get(obj, id, &fields_tbl);
+            fields = fields_tbl->as.shape.fields;
             break;
           }
         }
 
-        *removed = ivptr[removed_shape->next_field_index - 1];
+        *removed = fields[removed_shape->next_field_index - 1];
 
-        memmove(&ivptr[removed_shape->next_field_index - 1], &ivptr[removed_shape->next_field_index],
+        memmove(&fields[removed_shape->next_field_index - 1], &fields[removed_shape->next_field_index],
                 ((new_shape->next_field_index + 1) - removed_shape->next_field_index) * sizeof(VALUE));
 
         // Re-embed objects when instances become small enough
@@ -670,8 +670,8 @@ rb_shape_transition_shape_remove_ivar(VALUE obj, ID id, rb_shape_t *shape, VALUE
                 !RB_FL_TEST_RAW(obj, ROBJECT_EMBED) &&
                 rb_obj_embedded_size(new_shape->next_field_index) <= rb_gc_obj_slot_size(obj)) {
             RB_FL_SET_RAW(obj, ROBJECT_EMBED);
-            memcpy(ROBJECT_IVPTR(obj), ivptr, new_shape->next_field_index * sizeof(VALUE));
-            xfree(ivptr);
+            memcpy(ROBJECT_FIELDS(obj), fields, new_shape->next_field_index * sizeof(VALUE));
+            xfree(fields);
         }
 
         rb_shape_set_shape(obj, new_shape);
