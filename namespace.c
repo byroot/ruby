@@ -464,7 +464,7 @@ const rb_data_type_t rb_namespace_data_type = {
         namespace_entry_memsize,
         rb_namespace_gc_update_references,
     },
-    0, 0, RUBY_TYPED_WB_PROTECTED
+    0, 0, // TODO: enabling RUBY_TYPED_WB_PROTECTED would be good, but write barriers should be inserted.
 };
 
 VALUE
