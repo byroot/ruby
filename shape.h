@@ -95,6 +95,8 @@ get_shape_id_from_flags(VALUE obj)
 {
     RUBY_ASSERT(!RB_SPECIAL_CONST_P(obj));
     RUBY_ASSERT(!RB_TYPE_P(obj, T_IMEMO));
+    RUBY_ASSERT(!RB_TYPE_P(obj, T_CLASS) && !RB_TYPE_P(obj, T_MODULE));
+
     return (shape_id_t)((RBASIC(obj)->flags) >> SHAPE_FLAG_SHIFT);
 }
 
