@@ -1486,8 +1486,6 @@ internal_object_p(VALUE obj)
                 return rb_singleton_class_internal_p(obj);
             }
             return 0;
-          case T_OBJECT:
-            if (FL_TEST_RAW(obj, ROBJECT_HIDDEN)) break;
           default:
             if (!RBASIC(obj)->klass) break;
             return 0;
@@ -3157,8 +3155,6 @@ rb_gc_mark_children(void *objspace, VALUE obj)
         foreach_args.objspace = objspace;
         foreach_args.obj = obj;
         rb_class_classext_foreach(obj, gc_mark_classext_module, (void *)&foreach_args);
-
-        gc_mark_internal(RCLASS_PRIME_FIELDS_OBJ(obj));
         break;
 
       case T_ICLASS:
