@@ -5165,6 +5165,35 @@ fn jit_rb_false(
     true
 }
 
+/// Codegen for Kernel#class
+fn jit_rb_kernel_class(
+    _jit: &mut JITState,
+    asm: &mut Assembler,
+    _ci: *const rb_callinfo,
+    _cme: *const rb_callable_method_entry_t,
+    _block: Option<BlockHandler>,
+    _argc: i32,
+    known_recv_class: Option<VALUE>,
+) -> bool {
+    match known_recv_class {
+        None => {
+            asm_comment!(asm, "Unknown Kernel#class");
+            let recv_opnd = asm.stack_pop(1);
+            let ret = asm.ccall(rb_obj_class_must as _, vec![recv_opnd]);
+            let stack_ret = asm.stack_push(Type::UnknownHeap);
+            asm.mov(stack_ret, ret);
+        },
+        Some(klass) => {
+            asm_comment!(asm, "Known Kernel#class");
+            asm.stack_pop(1);
+            let stack_ret = asm.stack_push(Type::UnknownHeap);
+            let real_class = unsafe { rb_class_real(klass) };
+            asm.mov(stack_ret, real_class.into());
+        }
+    }
+    true
+}
+
 /// Codegen for Kernel#is_a?
 fn jit_rb_kernel_is_a(
     jit: &mut JITState,
@@ -10797,6 +10826,7 @@ pub fn yjit_reg_method_codegen_fns() {
         reg_method_codegen(rb_cNilClass, "nil?", jit_rb_true);
         reg_method_codegen(rb_mKernel, "nil?", jit_rb_false);
         reg_method_codegen(rb_mKernel, "is_a?", jit_rb_kernel_is_a);
+        reg_method_codegen(rb_mKernel, "class", jit_rb_kernel_class);
         reg_method_codegen(rb_mKernel, "kind_of?", jit_rb_kernel_is_a);
         reg_method_codegen(rb_mKernel, "instance_of?", jit_rb_kernel_instance_of);
 

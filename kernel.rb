@@ -15,10 +15,11 @@ module Kernel
   # Returns the class of \c obj, skipping singleton classes or module inclusions.
   #++
   #
-  def class
-    Primitive.attr! :leaf
-    Primitive.cexpr! 'rb_obj_class_must(self)'
-  end
+  # FIXME: YJIT's `reg_method_codegen` doesn't support methods defined in Ruby
+  # def class
+  #   Primitive.attr! :leaf
+  #   Primitive.cexpr! 'rb_obj_class_must(self)'
+  # end
 
   #
   #  call-seq:

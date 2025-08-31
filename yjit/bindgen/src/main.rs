@@ -110,6 +110,7 @@ fn main() {
         // From ruby/internal/intern/object.h
         .allowlist_function("rb_obj_is_kind_of")
         .allowlist_function("rb_obj_frozen_p")
+        .allowlist_function("rb_class_real")
 
         // From ruby/internal/encoding/encoding.h
         .allowlist_type("ruby_encoding_consts")
@@ -402,6 +403,7 @@ fn main() {
         .allowlist_function("rb_obj_equal")
         .allowlist_function("rb_class_new_instance_pass_kw")
         .allowlist_function("rb_obj_alloc")
+        .allowlist_function("rb_obj_class_must")
 
         // From gc.h and internal/gc.h
         .allowlist_function("rb_obj_info")

@@ -318,7 +318,7 @@ rb_obj_class(VALUE obj)
     return cl;
 }
 
-static inline VALUE
+VALUE
 rb_obj_class_must(VALUE obj)
 {
     return class_real(CLASS_OF(obj));
@@ -4511,6 +4511,7 @@ InitVM_Object(void)
     rb_define_method(rb_mKernel, "eql?", rb_obj_equal, 1);
     rb_define_method(rb_mKernel, "hash", rb_obj_hash, 0); /* in hash.c */
     rb_define_method(rb_mKernel, "<=>", rb_obj_cmp, 1);
+    rb_define_method(rb_mKernel, "class", rb_obj_class_must, 0);
 
     rb_define_method(rb_mKernel, "singleton_class", rb_obj_singleton_class, 0);
     rb_define_method(rb_mKernel, "dup", rb_obj_dup, 0);
