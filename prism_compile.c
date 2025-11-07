@@ -11558,6 +11558,7 @@ pm_parse_stdin(pm_parse_result_t *result)
     return pm_parse_process(result, node, NULL);
 }
 
+#define PM_OPTIONS_VERSION_CRUBY_4_0 PM_OPTIONS_VERSION_CRUBY_3_5
 #define PM_VERSION_FOR_RELEASE(major, minor) PM_VERSION_FOR_RELEASE_IMPL(major, minor)
 #define PM_VERSION_FOR_RELEASE_IMPL(major, minor) PM_OPTIONS_VERSION_CRUBY_##major##_##minor
 
