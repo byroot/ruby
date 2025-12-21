@@ -865,6 +865,57 @@ nogvl_readdir(void *dir)
 # define READDIR_NOGVL(dir, enc) nogvl_readdir((dir))
 #endif
 
+struct warning_args {
+#ifdef RUBY_FUNCTION_NAME_STRING
+    const char *func;
+#endif
+    const char *mesg;
+    rb_encoding *enc;
+};
+
+#ifndef RUBY_FUNCTION_NAME_STRING
+#define sys_enc_warning_in(func, mesg, enc) sys_enc_warning(mesg, enc)
+#endif
+
+static VALUE
+sys_warning_1(VALUE mesg)
+{
+    const struct warning_args *arg = (struct warning_args *)mesg;
+#ifdef RUBY_FUNCTION_NAME_STRING
+    rb_sys_enc_warning(arg->enc, "%s: %s", arg->func, arg->mesg);
+#else
+    rb_sys_enc_warning(arg->enc, "%s", arg->mesg);
+#endif
+    return Qnil;
+}
+
+static void
+sys_enc_warning_in(const char *func, const char *mesg, rb_encoding *enc)
+{
+    struct warning_args arg;
+#ifdef RUBY_FUNCTION_NAME_STRING
+    arg.func = func;
+#endif
+    arg.mesg = mesg;
+    arg.enc = enc;
+    rb_protect(sys_warning_1, (VALUE)&arg, 0);
+}
+
+#define GLOB_VERBOSE	(1U << (sizeof(int) * CHAR_BIT - 1))
+#define sys_warning(val, enc) \
+    ((flags & GLOB_VERBOSE) ? sys_enc_warning_in(RUBY_FUNCTION_NAME_STRING, (val), (enc)) :(void)0)
+
+/*
+ * ENOTDIR can be returned by stat(2) if a non-leaf element of the path
+ * is not a directory.
+ */
+ALWAYS_INLINE(static int to_be_ignored(int e));
+static inline int
+to_be_ignored(int e)
+{
+    return e == ENOENT || e == ENOTDIR;
+}
+
 /* safe to use without GVL */
 static int
 to_be_skipped(const struct dirent *dp)
@@ -887,6 +938,92 @@ to_be_skipped(const struct dirent *dp)
 #endif
     return FALSE;
 }
+
+#if USE_OPENDIR_AT
+struct fstatat_args {
+    int fd;
+    int flag;
+    const char *path;
+    struct stat *pst;
+};
+
+static void *
+nogvl_fstatat(void *args)
+{
+    struct fstatat_args *arg = (struct fstatat_args *)args;
+    return (void *)(VALUE)fstatat(arg->fd, arg->path, arg->pst, arg->flag);
+}
+#else
+struct stat_args {
+    const char *path;
+    struct stat *pst;
+};
+
+static void *
+nogvl_stat(void *args)
+{
+    struct stat_args *arg = (struct stat_args *)args;
+    return (void *)(VALUE)stat(arg->path, arg->pst);
+}
+#endif
+
+/* System call with warning */
+static int
+do_stat(int fd, size_t baselen, const char *path, struct stat *pst, int flags, rb_encoding *enc)
+{
+#if USE_OPENDIR_AT
+    struct fstatat_args args;
+    args.fd = fd;
+    args.path = path;
+    args.pst = pst;
+    args.flag = 0;
+    int ret = IO_WITHOUT_GVL_INT(nogvl_fstatat, (void *)&args);
+#else
+    struct stat_args args;
+    args.path = path;
+    args.pst = pst;
+    int ret = STAT(args);
+#endif
+    if (ret < 0 && !to_be_ignored(errno))
+        sys_warning(path, enc);
+
+    return ret;
+}
+
+#if defined HAVE_LSTAT || defined lstat || USE_OPENDIR_AT
+#if !USE_OPENDIR_AT
+static void *
+nogvl_lstat(void *args)
+{
+    struct stat_args *arg = (struct stat_args *)args;
+    return (void *)(VALUE)lstat(arg->path, arg->pst);
+}
+#endif
+
+static int
+do_lstat(int fd, size_t baselen, const char *path, struct stat *pst, int flags, rb_encoding *enc)
+{
+#if USE_OPENDIR_AT
+    struct fstatat_args args;
+    args.fd = fd;
+    args.path = path;
+    args.pst = pst;
+    args.flag = AT_SYMLINK_NOFOLLOW;
+    int ret = IO_WITHOUT_GVL_INT(nogvl_fstatat, (void *)&args);
+#else
+    struct stat_args args;
+    args.path = path;
+    args.pst = pst;
+    int ret = LSTAT(args);
+#endif
+    if (ret < 0 && !to_be_ignored(errno))
+        sys_warning(path, enc);
+
+    return ret;
+}
+#else
+#define do_lstat do_stat
+#endif
 
 /*
  * call-seq:
@@ -920,54 +1057,18 @@ dir_read(VALUE dir)
     }
 }
 
-static VALUE dir_each_entry(VALUE, VALUE (*)(VALUE, VALUE, unsigned char), VALUE, int);
+static VALUE dir_each_entry(VALUE, VALUE (*)(VALUE, VALUE, VALUE), VALUE, int, bool);
 
 static VALUE
-dir_yield(VALUE arg, VALUE path, unsigned char dtype)
+dir_yield(VALUE arg, VALUE path, VALUE _unset)
 {
     return rb_yield(path);
 }
 
 static VALUE
-dir_yield_with_type(VALUE arg, VALUE path, unsigned char dtype)
+dir_yield_with_stat(VALUE arg, VALUE path, VALUE stat)
 {
-    VALUE type;
-    switch (dtype) {
-#ifdef DT_BLK
-        case DT_BLK:
-            type = sym_block_device;
-            break;
-#endif
-#ifdef DT_CHR
-        case DT_CHR:
-            type = sym_character_device;
-            break;
-#endif
-        case DT_DIR:
-            type = sym_directory;
-            break;
-#ifdef DT_FIFO
-        case DT_FIFO:
-            type = sym_pipe;
-            break;
-#endif
-        case DT_LNK:
-            type = sym_symlink;
-            break;
-        case DT_REG:
-            type = sym_file;
-            break;
-#ifdef DT_SOCK
-        case DT_SOCK:
-            type = sym_socket;
-            break;
-#endif
-        default:
-            type = sym_unknown;
-            break;
-    }
-
-    return rb_yield_values(2, path, type);
+    return rb_yield_values(2, path, stat);
 }
 
 /*
@@ -993,11 +1094,11 @@ static VALUE
 dir_each(VALUE dir)
 {
     RETURN_ENUMERATOR(dir, 0, 0);
-    return dir_each_entry(dir, dir_yield, Qnil, FALSE);
+    return dir_each_entry(dir, dir_yield, Qnil, FALSE, false);
 }
 
 static VALUE
-dir_each_entry(VALUE dir, VALUE (*each)(VALUE, VALUE, unsigned char), VALUE arg, int children_only)
+dir_each_entry(VALUE dir, VALUE (*each)(VALUE, VALUE, VALUE), VALUE arg, int children_only, bool yield_stat)
 {
     struct dir_data *dirp;
     struct dirent *dp;
@@ -1006,6 +1107,12 @@ dir_each_entry(VALUE dir, VALUE (*each)(VALUE, VALUE, unsigned char), VALUE arg,
     GetDIR(dir, dirp);
     rewinddir(dirp->dir);
     IF_NORMALIZE_UTF8PATH(norm_p = need_normalization(dirp->dir, RSTRING_PTR(dirp->path)));
+
+    int dfd = -1;
+    if (yield_stat) {
+        dfd = dirfd(dirp->dir);
+    }
+
     while ((dp = READDIR(dirp->dir, dirp->enc)) != NULL) {
         const char *name = dp->d_name;
         size_t namlen = NAMLEN(dp);
@@ -1023,7 +1130,15 @@ dir_each_entry(VALUE dir, VALUE (*each)(VALUE, VALUE, unsigned char), VALUE arg,
         else
 #endif
         path = rb_external_str_new_with_enc(name, namlen, dirp->enc);
-        (*each)(arg, path, dp->d_type);
+
+        VALUE stat = Qundef;
+        if (yield_stat) {
+            struct stat st;
+            do_lstat(dfd, namlen, dp->d_name, &st, 0, dirp->enc);
+            stat = rb_stat_new(&st);
+        }
+
+        (*each)(arg, path, stat);
     }
     return dir;
 }
@@ -1723,46 +1838,6 @@ dir_s_rmdir(VALUE obj, VALUE dir)
     return INT2FIX(0);
 }
 
-struct warning_args {
-#ifdef RUBY_FUNCTION_NAME_STRING
-    const char *func;
-#endif
-    const char *mesg;
-    rb_encoding *enc;
-};
-
-#ifndef RUBY_FUNCTION_NAME_STRING
-#define sys_enc_warning_in(func, mesg, enc) sys_enc_warning(mesg, enc)
-#endif
-
-static VALUE
-sys_warning_1(VALUE mesg)
-{
-    const struct warning_args *arg = (struct warning_args *)mesg;
-#ifdef RUBY_FUNCTION_NAME_STRING
-    rb_sys_enc_warning(arg->enc, "%s: %s", arg->func, arg->mesg);
-#else
-    rb_sys_enc_warning(arg->enc, "%s", arg->mesg);
-#endif
-    return Qnil;
-}
-
-static void
-sys_enc_warning_in(const char *func, const char *mesg, rb_encoding *enc)
-{
-    struct warning_args arg;
-#ifdef RUBY_FUNCTION_NAME_STRING
-    arg.func = func;
-#endif
-    arg.mesg = mesg;
-    arg.enc = enc;
-    rb_protect(sys_warning_1, (VALUE)&arg, 0);
-}
-
-#define GLOB_VERBOSE	(1U << (sizeof(int) * CHAR_BIT - 1))
-#define sys_warning(val, enc) \
-    ((flags & GLOB_VERBOSE) ? sys_enc_warning_in(RUBY_FUNCTION_NAME_STRING, (val), (enc)) :(void)0)
-
 static inline size_t
 glob_alloc_size(size_t x, size_t y)
 {
@@ -1794,17 +1869,6 @@ glob_realloc_n(void *p, size_t x, size_t y)
 #define GLOB_FREE(ptr) free(ptr)
 #define GLOB_JUMP_TAG(status) (((status) == -1) ? rb_memerror() : rb_jump_tag(status))
 
-/*
- * ENOTDIR can be returned by stat(2) if a non-leaf element of the path
- * is not a directory.
- */
-ALWAYS_INLINE(static int to_be_ignored(int e));
-static inline int
-to_be_ignored(int e)
-{
-    return e == ENOENT || e == ENOTDIR;
-}
-
 #ifdef _WIN32
 #define STAT(args)	(int)(VALUE)nogvl_stat(&(args))
 #define LSTAT(args)	(int)(VALUE)nogvl_lstat(&(args))
@@ -1830,92 +1894,6 @@ at_subpath(int fd, size_t baselen, const char *path)
 #endif
     return *path ? path : ".";
 }
-
-#if USE_OPENDIR_AT
-struct fstatat_args {
-    int fd;
-    int flag;
-    const char *path;
-    struct stat *pst;
-};
-
-static void *
-nogvl_fstatat(void *args)
-{
-    struct fstatat_args *arg = (struct fstatat_args *)args;
-    return (void *)(VALUE)fstatat(arg->fd, arg->path, arg->pst, arg->flag);
-}
-#else
-struct stat_args {
-    const char *path;
-    struct stat *pst;
-};
-
-static void *
-nogvl_stat(void *args)
-{
-    struct stat_args *arg = (struct stat_args *)args;
-    return (void *)(VALUE)stat(arg->path, arg->pst);
-}
-#endif
-
-/* System call with warning */
-static int
-do_stat(int fd, size_t baselen, const char *path, struct stat *pst, int flags, rb_encoding *enc)
-{
-#if USE_OPENDIR_AT
-    struct fstatat_args args;
-    args.fd = fd;
-    args.path = path;
-    args.pst = pst;
-    args.flag = 0;
-    int ret = IO_WITHOUT_GVL_INT(nogvl_fstatat, (void *)&args);
-#else
-    struct stat_args args;
-    args.path = path;
-    args.pst = pst;
-    int ret = STAT(args);
-#endif
-    if (ret < 0 && !to_be_ignored(errno))
-        sys_warning(path, enc);
-
-    return ret;
-}
-
-#if defined HAVE_LSTAT || defined lstat || USE_OPENDIR_AT
-#if !USE_OPENDIR_AT
-static void *
-nogvl_lstat(void *args)
-{
-    struct stat_args *arg = (struct stat_args *)args;
-    return (void *)(VALUE)lstat(arg->path, arg->pst);
-}
-#endif
-
-static int
-do_lstat(int fd, size_t baselen, const char *path, struct stat *pst, int flags, rb_encoding *enc)
-{
-#if USE_OPENDIR_AT
-    struct fstatat_args args;
-    args.fd = fd;
-    args.path = path;
-    args.pst = pst;
-    args.flag = AT_SYMLINK_NOFOLLOW;
-    int ret = IO_WITHOUT_GVL_INT(nogvl_fstatat, (void *)&args);
-#else
-    struct stat_args args;
-    args.path = path;
-    args.pst = pst;
-    int ret = LSTAT(args);
-#endif
-    if (ret < 0 && !to_be_ignored(errno))
-        sys_warning(path, enc);
-
-    return ret;
-}
-#else
-#define do_lstat do_stat
-#endif
 
 struct opendir_at_arg {
     int basefd;
@@ -3528,7 +3506,7 @@ dir_foreach(int argc, VALUE *argv, VALUE io)
 }
 
 static VALUE
-dir_entry_ary_push(VALUE ary, VALUE entry, unsigned char ftype)
+dir_entry_ary_push(VALUE ary, VALUE entry, VALUE _unused)
 {
     return rb_ary_push(ary, entry);
 }
@@ -3537,7 +3515,7 @@ static VALUE
 dir_collect(VALUE dir)
 {
     VALUE ary = rb_ary_new();
-    dir_each_entry(dir, dir_entry_ary_push, ary, FALSE);
+    dir_each_entry(dir, dir_entry_ary_push, ary, FALSE, false);
     return ary;
 }
 
@@ -3570,8 +3548,8 @@ dir_entries(int argc, VALUE *argv, VALUE io)
 static VALUE
 dir_each_child(VALUE dir)
 {
-    bool yield_type = rb_block_given_p() && (rb_block_arity() == 2);
-    return dir_each_entry(dir, yield_type ? dir_yield_with_type : dir_yield, Qnil, TRUE);
+    bool yield_stat = rb_block_given_p() && (rb_block_arity() == 2);
+    return dir_each_entry(dir, yield_stat ? dir_yield_with_stat : dir_yield, Qnil, TRUE, yield_stat);
 }
 
 /*
@@ -3615,8 +3593,8 @@ static VALUE
 dir_each_child_m(VALUE dir)
 {
     RETURN_ENUMERATOR(dir, 0, 0);
-    bool yield_type = rb_block_given_p() && (rb_block_arity() == 2);
-    return dir_each_entry(dir, yield_type ? dir_yield_with_type : dir_yield, Qnil, TRUE);
+    bool yield_stat = rb_block_given_p() && (rb_block_arity() == 2);
+    return dir_each_entry(dir, yield_stat ? dir_yield_with_stat : dir_yield, Qnil, TRUE, yield_stat);
 }
 
 /*
@@ -3634,7 +3612,7 @@ static VALUE
 dir_collect_children(VALUE dir)
 {
     VALUE ary = rb_ary_new();
-    dir_each_entry(dir, dir_entry_ary_push, ary, TRUE);
+    dir_each_entry(dir, dir_entry_ary_push, ary, TRUE, false);
     return ary;
 }
 
