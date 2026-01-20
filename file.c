@@ -3574,6 +3574,8 @@ static const char file_alt_separator[] = {FILE_ALT_SEPARATOR, '\0'};
 #define Next(p, e, mb_enc, enc) ((p) + ((mb_enc) ? rb_enc_mbclen((p), (e), (enc)) : 1))
 #define Inc(p, e, mb_enc, enc) ((p) = Next((p), (e), (mb_enc), (enc)))
 
+#define Dec(p, s, e, mb_enc, enc) ((p) = ((mb_enc) ? rb_enc_prev_char(s, p, e, enc) : ((p) > (s) ? p - 1 : NULL)))
+
 #if defined(DOSISH_UNC)
 #define has_unc(buf) (isdirsep((buf)[0]) && isdirsep((buf)[1]))
 #else
@@ -5127,56 +5129,48 @@ rb_file_dirname_n(VALUE fname, int n)
 }
 
 static inline const char *
-enc_find_extname(const char *name, long *len, bool mb_enc, rb_encoding *enc)
+enc_find_extname(const char *name, long *out_len, bool mb_enc, rb_encoding *enc)
 {
-    const char *p, *e, *end = name + (len ? *len : (long)strlen(name));
+    long len = (out_len) ? *out_len : (long)strlen(name);
+    const char *end = name + len;
 
-    p = strrdirsep(name, end, mb_enc, enc);	/* get the last path component */
-    if (!p)
-        p = name;
-    else
-        do name = ++p; while (isdirsep(*p));
+    const char *p = end - 1;
+    while (isdirsep(p[0])) {
+        Dec(p, name, end, mb_enc, enc);
+    }
+    end = p + 1;
 
-    e = 0;
-    while (*p && *p == '.') p++;
-    while (*p) {
-        if (*p == '.' || istrailinggarbage(*p)) {
-#if USE_NTFS
-            const char *last = p++, *dot = last;
-            while (istrailinggarbage(*p)) {
-                if (*p == '.') dot = p;
-                p++;
+    while (p > name) {
+        if (p[0] == '.') {
+            if (isdirsep(p[-1])) {
+                break; // hidden file: foo/.bar
             }
-            if (!*p || isADS(*p)) {
-                p = last;
-                break;
+            else if (p[-1] == '.') {
+                
             }
-            if (*last == '.' || dot > last) e = dot;
-            continue;
-#else
-            e = p;	  /* get the last dot of the last component */
-#endif /* USE_NTFS */
+
+            if  {
+                p--;
+                while (p > name) {
+                    
+                }
+            }
+
+            if (*out_len) {
+                *out_len = (end - p);
+            }
+            return p;
         }
-#if USE_NTFS
-        else if (isADS(*p)) {
-            break;
+        else if (isdirsep(p[0]) || isADS(p[0])) {
+            break; // No extension: foo/bar
         }
-#endif
-        else if (isdirsep(*p))
-            break;
-        Inc(p, end, mb_enc, enc);
+        Dec(p, name, end, mb_enc, enc);
     }
 
-    if (len) {
-        /* no dot, or the only dot is first or end? */
-        if (!e || e == name)
-            *len = 0;
-        else if (e+1 == p)
-            *len = 1;
-        else
-            *len = p - e;
+    if (out_len) {
+        *out_len = 0;
     }
-    return e;
+    return NULL;
 }
 
 /*
