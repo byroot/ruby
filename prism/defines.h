@@ -172,6 +172,7 @@
     #include "prism_xallocator.h"
 #else
     #ifndef xmalloc
+        #error "expected Ruby's xmalloc to be defined"
         /**
          * The malloc function that should be used. This can be overridden with
          * the PRISM_XALLOCATOR define.
