@@ -64,6 +64,7 @@ typedef struct rb_subclass_anchor rb_subclass_anchor_t;
 
 struct rb_subclass_entry {
     VALUE klass;
+    const rb_box_t *box;
     struct rb_subclass_entry *next;
     struct rb_subclass_entry *prev;
 };
@@ -98,13 +99,14 @@ struct rb_classext_struct {
      * from the super's subclasses. But it may be prevented by the read barrier.
      * Fetching the super's subclasses for a ns is to avoid the read barrier in that process.
      */
-    rb_box_subclasses_t *box_super_subclasses;
+    struct rb_subclass_entry *subclass_entry;
+
     /**
      * In the case that this is an `ICLASS`, `box_module_subclasses` points to the link
      * in the module's `subclasses` list that indicates that the klass has been
      * included. Hopefully that makes sense.
      */
-    rb_box_subclasses_t *box_module_subclasses;
+    struct rb_subclass_entry *module_subclass_entry;
 
     const VALUE origin_;
     const VALUE refined_class;
