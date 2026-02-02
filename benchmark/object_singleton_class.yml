@@ -1,0 +1,3 @@
+benchmark:
+  base: Object.allocate
+  singleton_class: Object.allocate.singleton_class
