@@ -11,6 +11,13 @@ Note that each entry is kept to a minimum, see links for details.
 
 Note: We're only listing outstanding class updates.
 
+* Dir
+
+    * `Dir.scan` and `Dir#scan` were added to provide a more efficient way to
+      recursively scan directories. The method retuns the directory entries
+      with their types, which generally saves one `stat(2)` syscall per entry.
+      [[Feature #21800]]
+
 * Kernel
 
     * `Kernel#autoload_relative` and `Module#autoload_relative` are added.
@@ -35,6 +42,10 @@ Note: We're only listing outstanding class updates.
 
     * A deprecated behavior, `Set#to_set`, `Range#to_set`, and
       `Enumerable#to_set` accepting arguments, was removed.  [[Feature #21390]]
+
+* Thread::Monitor
+
+    * Monitor is now a core class.  [[Feature #21788]]
 
 ## Stdlib updates
 
@@ -104,3 +115,5 @@ A lot of work has gone into making Ractors more stable, performant, and usable. 
 [Feature #15330]: https://bugs.ruby-lang.org/issues/15330
 [Feature #21390]: https://bugs.ruby-lang.org/issues/21390
 [Feature #21785]: https://bugs.ruby-lang.org/issues/21785
+[Feature #21788]: https://bugs.ruby-lang.org/issues/21788
+[Feature #21800]: https://bugs.ruby-lang.org/issues/21800
