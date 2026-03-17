@@ -212,6 +212,43 @@ class Array
     indexes
   end
 
+  #  call-seq:
+  #    find_index(object) -> integer or nil
+  #    find_index {|element| ... } -> integer or nil
+  #    find_index -> new_enumerator
+  #    index(object) -> integer or nil
+  #    index {|element| ... } -> integer or nil
+  #    index -> new_enumerator
+  #
+  #  Returns the zero-based integer index of a specified element, or +nil+.
+  #
+  #  With only argument +object+ given,
+  #  returns the index of the first element +element+
+  #  for which <tt>object == element</tt>:
+  #
+  #    a = [:foo, 'bar', 2, 'bar']
+  #    a.index('bar') # => 1
+  #
+  #  Returns +nil+ if no such element found.
+  #
+  #  With only a block given,
+  #  calls the block with each successive element;
+  #  returns the index of the first element for which the block returns a truthy value:
+  #
+  #    a = [:foo, 'bar', 2, 'bar']
+  #    a.index {|element| element == 'bar' } # => 1
+  #
+  #  Returns +nil+ if the block never returns a truthy value.
+  #
+  #  With neither an argument nor a block given, returns a new Enumerator.
+  #
+  #  Related: see {Methods for Querying}[rdoc-ref:Array@Methods+for+Querying].
+  def index(object = (object_unset = true), offset: 0, &block)
+    p [object, object_unset, offset]
+    Primitive.ary_index(object, object_unset, offset, &block)
+  end
+  alias_method :find_index, :index
+
   with_jit do
     if Primitive.rb_builtin_basic_definition_p(:each)
       undef :each

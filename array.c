@@ -2174,60 +2174,26 @@ rb_ary_rfind(int argc, VALUE *argv, VALUE ary)
     return Qnil;
 }
 
-/*
- *  call-seq:
- *    find_index(object) -> integer or nil
- *    find_index {|element| ... } -> integer or nil
- *    find_index -> new_enumerator
- *    index(object) -> integer or nil
- *    index {|element| ... } -> integer or nil
- *    index -> new_enumerator
- *
- *  Returns the zero-based integer index of a specified element, or +nil+.
- *
- *  With only argument +object+ given,
- *  returns the index of the first element +element+
- *  for which <tt>object == element</tt>:
- *
- *    a = [:foo, 'bar', 2, 'bar']
- *    a.index('bar') # => 1
- *
- *  Returns +nil+ if no such element found.
- *
- *  With only a block given,
- *  calls the block with each successive element;
- *  returns the index of the first element for which the block returns a truthy value:
- *
- *    a = [:foo, 'bar', 2, 'bar']
- *    a.index {|element| element == 'bar' } # => 1
- *
- *  Returns +nil+ if the block never returns a truthy value.
- *
- *  With neither an argument nor a block given, returns a new Enumerator.
- *
- *  Related: see {Methods for Querying}[rdoc-ref:Array@Methods+for+Querying].
- */
-
 static VALUE
-rb_ary_index(int argc, VALUE *argv, VALUE ary)
+ary_index(rb_execution_context_t *ec, VALUE ary, VALUE val, VALUE val_unset, VALUE offset)
 {
-    VALUE val;
     long i;
 
-    if (argc == 0) {
-        RETURN_ENUMERATOR(ary, 0, 0);
-        for (i=0; i<RARRAY_LEN(ary); i++) {
+    rb_p(val); rb_p(val_unset); rb_p(offset);
+    if (val_unset) {
+        for (i = NUM2LONG(offset); i < RARRAY_LEN(ary); i++) {
             if (RTEST(rb_yield(RARRAY_AREF(ary, i)))) {
                 return LONG2NUM(i);
             }
         }
         return Qnil;
     }
-    rb_check_arity(argc, 0, 1);
-    val = argv[0];
-    if (rb_block_given_p())
+
+    if (rb_block_given_p()) {
         rb_warn("given block not used");
-    for (i=0; i<RARRAY_LEN(ary); i++) {
+    }
+
+    for (i = NUM2LONG(offset); i < RARRAY_LEN(ary); i++) {
         VALUE e = RARRAY_AREF(ary, i);
         if (rb_equal(e, val)) {
             return LONG2NUM(i);
@@ -8920,8 +8886,6 @@ Init_Array(void)
     rb_define_method(rb_cArray, "find", rb_ary_find, -1);
     rb_define_method(rb_cArray, "detect", rb_ary_find, -1);
     rb_define_method(rb_cArray, "rfind", rb_ary_rfind, -1);
-    rb_define_method(rb_cArray, "find_index", rb_ary_index, -1);
-    rb_define_method(rb_cArray, "index", rb_ary_index, -1);
     rb_define_method(rb_cArray, "rindex", rb_ary_rindex, -1);
     rb_define_method(rb_cArray, "join", rb_ary_join_m, -1);
     rb_define_method(rb_cArray, "reverse", rb_ary_reverse_m, 0);
