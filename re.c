@@ -3400,6 +3400,8 @@ rb_reg_initialize_check(VALUE obj)
     }
 }
 
+static st_index_t do_reg_hash(VALUE re);
+
 static int
 rb_reg_initialize(VALUE obj, const char *s, long len, rb_encoding *enc,
                   int options, onig_errmsg_buffer err,
@@ -3447,11 +3449,14 @@ rb_reg_initialize(VALUE obj, const char *s, long len, rb_encoding *enc,
     re->ptr = make_regexp(RSTRING_PTR(unescaped), RSTRING_LEN(unescaped), enc,
                           options & ARG_REG_OPTION_MASK, err,
                           sourcefile, sourceline);
+
     if (!re->ptr) return -1;
+
     if (RBASIC_CLASS(obj) == rb_cRegexp) {
         OBJ_FREEZE(obj);
     }
     RB_GC_GUARD(unescaped);
+
     return 0;
 }
 
@@ -3466,6 +3471,8 @@ reg_set_source(VALUE reg, VALUE str, rb_encoding *enc)
     }
     str = rb_fstring(str);
     RB_OBJ_WRITE(reg, &RREGEXP(reg)->src, str);
+
+    RREGEXP(reg)->hash = do_reg_hash(reg);
 }
 
 static int
@@ -3569,6 +3576,8 @@ rb_reg_new(const char *s, long len, int options)
     return rb_enc_reg_new(s, len, rb_ascii8bit_encoding(), options);
 }
 
+static VALUE rb_re_dedup(VALUE);
+
 VALUE
 rb_reg_compile(VALUE str, int options, const char *sourcefile, int sourceline)
 {
@@ -3580,7 +3589,8 @@ rb_reg_compile(VALUE str, int options, const char *sourcefile, int sourceline)
         rb_set_errinfo(rb_reg_error_desc(str, options, err));
         return Qnil;
     }
-    return re;
+    // TODO: we should be able to do the lookup before compiling.
+    return rb_re_dedup(re);
 }
 
 static VALUE reg_cache;
@@ -3601,7 +3611,13 @@ rb_reg_regcomp(VALUE str)
     }
 }
 
-static st_index_t reg_hash(VALUE re);
+
+static st_index_t
+reg_hash(VALUE re)
+{
+    return RREGEXP(re)->hash;
+}
+
 /*
  *  call-seq:
  *    hash -> integer
@@ -3620,7 +3636,7 @@ rb_reg_hash(VALUE re)
 }
 
 static st_index_t
-reg_hash(VALUE re)
+do_reg_hash(VALUE re)
 {
     st_index_t hashval;
 
@@ -4963,6 +4979,52 @@ rb_reg_timeout_get(VALUE re)
     double d = hrtime2double(RREGEXP_PTR(re)->timelimit);
     if (d == 0.0) return Qnil;
     return DBL2NUM(d);
+}
+
+int
+rb_re_cache_equal(st_data_t _re1, st_data_t _re2)
+{
+    VALUE re1 = (VALUE)_re1;
+    VALUE re2 = (VALUE)_re2;
+
+    if (re1 == re2) return true;
+    if (RREGEXP_SRC(re1) != RREGEXP_SRC(re2)) return 1;
+
+    if (FL_TEST(re1, KCODE_FIXED) != FL_TEST(re2, KCODE_FIXED)) return 1;
+    if (RREGEXP_PTR(re1)->options != RREGEXP_PTR(re2)->options) return 1;
+    if (ENCODING_GET(re1) != ENCODING_GET(re2)) return 1;
+
+    return 0;
+}
+
+st_index_t
+rb_re_cache_hash(st_data_t re)
+{
+    return RREGEXP((VALUE)re)->hash;
+}
+
+static VALUE
+rb_re_dedup(VALUE re)
+{
+    // We could use the same concurrent_set as for fstrings,
+    // but since for now this is only intended for regexp literals,
+    // it's unlikely to happen outside the main ractor.
+    if (rb_ractor_main_p()) {
+        VALUE cached_re;
+        if (set_table_get(&GET_VM()->re_cache_table, re, &cached_re)) {
+            return cached_re;
+        }
+        else {
+            set_insert(&GET_VM()->re_cache_table, re);
+        }
+    }
+    return re;
+}
+
+void
+rb_gc_free_regexp(VALUE re)
+{
+    set_table_delete(&GET_VM()->re_cache_table, (st_data_t *)&re);
 }
 
 /*
