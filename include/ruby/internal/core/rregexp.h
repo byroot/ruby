@@ -71,9 +71,11 @@ struct RRegexp {
     struct re_pattern_buffer *ptr;
 
     /** Source code of this expression. */
-    const VALUE src;
+    VALUE src;
 
     st_index_t hash;
+
+    int options; // TODO: move into flags?
 
     /**
      * Reference count.  A  regexp match can take extraordinarily  long time to

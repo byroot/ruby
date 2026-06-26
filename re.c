@@ -38,10 +38,17 @@
  *            The regexp has "fixed encoding", meaning it can't be match against any ASCII-compatible string.
  * 6:     REG_ENCODING_NONE
  *            The regexp has no encoding. Means the `n` modifier was used.
+ * 10-16: ENCODING
+ *            Stores the encoding of the regexp.
+ * 19:    REG_FAKE_RE
+ *            The regexp is not allocated or managed by the garbage collector.
+ *            Typically, the Regexp object header (struct RRegexp) is temporarily
+ *            allocated on C stack.
  */
 
 #define KCODE_FIXED FL_USER4
 #define REG_ENCODING_NONE FL_USER6
+#define REG_FAKE_RE FL_USER19
 
 /* Flags of RMatch
  *
@@ -374,6 +381,7 @@ static void
 rb_reg_check(VALUE re)
 {
     if (!RREGEXP_PTR(re) || !RREGEXP_SRC(re) || !RREGEXP_SRC_PTR(re)) {
+        rb_bug("uninitialized Rege");
         rb_raise(rb_eTypeError, "uninitialized Regexp");
     }
 }
@@ -3395,7 +3403,7 @@ static void
 rb_reg_initialize_check(VALUE obj)
 {
     rb_check_frozen(obj);
-    if (RREGEXP_PTR(obj)) {
+    if (RREGEXP_PTR(obj) && !FL_TEST_RAW(obj, REG_FAKE_RE)) {
         rb_raise(rb_eTypeError, "already initialized regexp");
     }
 }
@@ -3403,24 +3411,24 @@ rb_reg_initialize_check(VALUE obj)
 static st_index_t do_reg_hash(VALUE re);
 
 static int
-rb_reg_initialize(VALUE obj, const char *s, long len, rb_encoding *enc,
-                  int options, onig_errmsg_buffer err,
-                  const char *sourcefile, int sourceline)
+rb_reg_preinitialize(VALUE obj, const char *s, long len, rb_encoding *enc,
+                  int options, onig_errmsg_buffer err, VALUE *unescaped)
 {
     struct RRegexp *re = RREGEXP(obj);
-    VALUE unescaped;
     rb_encoding *fixed_enc = 0;
     rb_encoding *a_enc = rb_ascii8bit_encoding();
 
     rb_reg_initialize_check(obj);
+
+    re->options = options;
 
     if (rb_enc_dummy_p(enc)) {
         errcpy(err, "can't make regexp with dummy encoding");
         return -1;
     }
 
-    unescaped = rb_reg_preprocess(s, s+len, enc, &fixed_enc, err, options);
-    if (NIL_P(unescaped))
+    *unescaped = rb_reg_preprocess(s, s+len, enc, &fixed_enc, err, options);
+    if (NIL_P(*unescaped))
         return -1;
 
     if (fixed_enc) {
@@ -3445,7 +3453,15 @@ rb_reg_initialize(VALUE obj, const char *s, long len, rb_encoding *enc,
     if (options & ARG_ENCODING_NONE) {
         re->basic.flags |= REG_ENCODING_NONE;
     }
+    return 0;
+}
 
+static int
+rb_reg_postinitialize(VALUE obj, VALUE unescaped, rb_encoding *enc,
+                      int options, onig_errmsg_buffer err,
+                      const char *sourcefile, int sourceline)
+{
+    struct RRegexp *re = RREGEXP(obj);
     re->ptr = make_regexp(RSTRING_PTR(unescaped), RSTRING_LEN(unescaped), enc,
                           options & ARG_REG_OPTION_MASK, err,
                           sourcefile, sourceline);
@@ -3460,6 +3476,20 @@ rb_reg_initialize(VALUE obj, const char *s, long len, rb_encoding *enc,
     return 0;
 }
 
+static int
+rb_reg_initialize(VALUE obj, const char *s, long len, rb_encoding *enc,
+                  int options, onig_errmsg_buffer err,
+                  const char *sourcefile, int sourceline)
+{
+    VALUE unescaped;
+    int failure = rb_reg_preinitialize(obj, s, len, enc, options, err, &unescaped);
+    if (failure) {
+        return failure;
+    }
+
+    return rb_reg_postinitialize(obj, unescaped, enc, options, err, sourcefile, sourceline);
+}
+
 static void
 reg_set_source(VALUE reg, VALUE str, rb_encoding *enc)
 {
@@ -3470,14 +3500,18 @@ reg_set_source(VALUE reg, VALUE str, rb_encoding *enc)
         str = rb_enc_associate(dup, enc = regenc);
     }
     str = rb_fstring(str);
-    RB_OBJ_WRITE(reg, &RREGEXP(reg)->src, str);
+    if (FL_TEST_RAW(reg, REG_FAKE_RE)) {
+        RREGEXP(reg)->src = str;
+    }
+    else {
+        RB_OBJ_WRITE(reg, &RREGEXP(reg)->src, str);
+    }
 
     RREGEXP(reg)->hash = do_reg_hash(reg);
 }
 
 static int
-rb_reg_initialize_str(VALUE obj, VALUE str, int options, onig_errmsg_buffer err,
-        const char *sourcefile, int sourceline)
+rb_reg_preinitialize_str(VALUE obj, VALUE str, int options, onig_errmsg_buffer err, VALUE *unescaped)
 {
     int ret;
     rb_encoding *str_enc = rb_enc_get(str), *enc = str_enc;
@@ -3491,9 +3525,32 @@ rb_reg_initialize_str(VALUE obj, VALUE str, int options, onig_errmsg_buffer err,
             enc = ascii8bit;
         }
     }
-    ret = rb_reg_initialize(obj, RSTRING_PTR(str), RSTRING_LEN(str), enc,
-                            options, err, sourcefile, sourceline);
-    if (ret == 0) reg_set_source(obj, str, str_enc);
+    ret = rb_reg_preinitialize(obj, RSTRING_PTR(str), RSTRING_LEN(str), enc,
+                            options, err, unescaped);
+
+    if (ret == 0 && FL_TEST_RAW(obj, REG_FAKE_RE)) {
+        reg_set_source(obj, str, str_enc);
+    }
+
+    return ret;
+}
+
+static int
+rb_reg_initialize_str(VALUE obj, VALUE str, int options, onig_errmsg_buffer err,
+        const char *sourcefile, int sourceline)
+{
+    rb_encoding *str_enc = rb_enc_get(str);
+
+    VALUE unescaped;
+    int ret = rb_reg_preinitialize_str(obj, str, options, err, &unescaped);
+    if (ret == 0) {
+        ret = rb_reg_postinitialize(obj, unescaped, str_enc, options, err, sourcefile, sourceline);
+    }
+
+    if (ret == 0 && !FL_TEST_RAW(obj, REG_FAKE_RE)) {
+        reg_set_source(obj, str, str_enc);
+    }
+
     return ret;
 }
 
@@ -3576,21 +3633,45 @@ rb_reg_new(const char *s, long len, int options)
     return rb_enc_reg_new(s, len, rb_ascii8bit_encoding(), options);
 }
 
-static VALUE rb_re_dedup(VALUE);
+static void re_cache_insert(VALUE);
+static VALUE re_cache_lookup(VALUE);
 
 VALUE
 rb_reg_compile(VALUE str, int options, const char *sourcefile, int sourceline)
 {
-    VALUE re = rb_reg_alloc();
+    if (!str) str = rb_str_new(0, 0);
     onig_errmsg_buffer err = "";
 
-    if (!str) str = rb_str_new(0,0);
-    if (rb_reg_initialize_str(re, str, options, err, sourcefile, sourceline) != 0) {
+    struct RRegexp fake_re = { RBASIC_INIT };
+    fake_re.basic.flags = T_REGEXP|REG_FAKE_RE;
+    RBASIC_SET_SHAPE_ID((VALUE)&fake_re, ROOT_SHAPE_ID | SHAPE_ID_LAYOUT_OTHER);
+
+    struct re_pattern_buffer fake_ptr = { .options = options };
+    fake_re.ptr = &fake_ptr;
+
+    VALUE unescaped;
+    if (rb_reg_preinitialize_str((VALUE)&fake_re, str, options, err, &unescaped)) {
         rb_set_errinfo(rb_reg_error_desc(str, options, err));
         return Qnil;
     }
-    // TODO: we should be able to do the lookup before compiling.
-    return rb_re_dedup(re);
+
+    VALUE cached_re = re_cache_lookup((VALUE)&fake_re);
+    if (cached_re) {
+        return cached_re;
+    }
+
+    VALUE re = rb_reg_alloc();
+    RBASIC(re)->flags = fake_re.basic.flags & ~REG_FAKE_RE;
+    RB_OBJ_WRITE(re, &RREGEXP(re)->src, fake_re.src);
+    RREGEXP(re)->hash = fake_re.hash;
+
+    if (rb_reg_postinitialize(re, unescaped, rb_enc_get(str), options, err, sourcefile, sourceline) != 0) {
+        rb_set_errinfo(rb_reg_error_desc(str, options, err));
+        return Qnil;
+    }
+
+    re_cache_insert(re);
+    return re;
 }
 
 static VALUE reg_cache;
@@ -4991,7 +5072,7 @@ rb_re_cache_equal(st_data_t _re1, st_data_t _re2)
     if (RREGEXP_SRC(re1) != RREGEXP_SRC(re2)) return 1;
 
     if (FL_TEST(re1, KCODE_FIXED) != FL_TEST(re2, KCODE_FIXED)) return 1;
-    if (RREGEXP_PTR(re1)->options != RREGEXP_PTR(re2)->options) return 1;
+    if (RREGEXP(re1)->options != RREGEXP(re2)->options) return 1;
     if (ENCODING_GET(re1) != ENCODING_GET(re2)) return 1;
 
     return 0;
@@ -5003,22 +5084,27 @@ rb_re_cache_hash(st_data_t re)
     return RREGEXP((VALUE)re)->hash;
 }
 
-static VALUE
-rb_re_dedup(VALUE re)
+VALUE
+re_cache_lookup(VALUE fake_re)
 {
     // We could use the same concurrent_set as for fstrings,
     // but since for now this is only intended for regexp literals,
     // it's unlikely to happen outside the main ractor.
     if (rb_ractor_main_p()) {
         VALUE cached_re;
-        if (set_table_get(&GET_VM()->re_cache_table, re, &cached_re)) {
+        if (set_table_get(&GET_VM()->re_cache_table, fake_re, &cached_re)) {
             return cached_re;
         }
-        else {
-            set_insert(&GET_VM()->re_cache_table, re);
-        }
     }
-    return re;
+    return Qfalse;
+}
+
+void
+re_cache_insert(VALUE re)
+{
+    if (rb_ractor_main_p()) {
+        set_insert(&GET_VM()->re_cache_table, re);
+    }
 }
 
 void
