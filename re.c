@@ -381,7 +381,6 @@ static void
 rb_reg_check(VALUE re)
 {
     if (!RREGEXP_PTR(re) || !RREGEXP_SRC(re) || !RREGEXP_SRC_PTR(re)) {
-        rb_bug("uninitialized Rege");
         rb_raise(rb_eTypeError, "uninitialized Regexp");
     }
 }
@@ -3420,8 +3419,6 @@ rb_reg_preinitialize(VALUE obj, const char *s, long len, rb_encoding *enc,
 
     rb_reg_initialize_check(obj);
 
-    re->options = options;
-
     if (rb_enc_dummy_p(enc)) {
         errcpy(err, "can't make regexp with dummy encoding");
         return -1;
@@ -3453,17 +3450,19 @@ rb_reg_preinitialize(VALUE obj, const char *s, long len, rb_encoding *enc,
     if (options & ARG_ENCODING_NONE) {
         re->basic.flags |= REG_ENCODING_NONE;
     }
+
+    re->options = options;
+
     return 0;
 }
 
 static int
-rb_reg_postinitialize(VALUE obj, VALUE unescaped, rb_encoding *enc,
-                      int options, onig_errmsg_buffer err,
+rb_reg_postinitialize(VALUE obj, VALUE unescaped, onig_errmsg_buffer err,
                       const char *sourcefile, int sourceline)
 {
     struct RRegexp *re = RREGEXP(obj);
-    re->ptr = make_regexp(RSTRING_PTR(unescaped), RSTRING_LEN(unescaped), enc,
-                          options & ARG_REG_OPTION_MASK, err,
+    re->ptr = make_regexp(RSTRING_PTR(unescaped), RSTRING_LEN(unescaped), rb_enc_get(obj),
+                          re->options & ARG_REG_OPTION_MASK, err,
                           sourcefile, sourceline);
 
     if (!re->ptr) return -1;
@@ -3487,7 +3486,7 @@ rb_reg_initialize(VALUE obj, const char *s, long len, rb_encoding *enc,
         return failure;
     }
 
-    return rb_reg_postinitialize(obj, unescaped, enc, options, err, sourcefile, sourceline);
+    return rb_reg_postinitialize(obj, unescaped, err, sourcefile, sourceline);
 }
 
 static void
@@ -3539,16 +3538,14 @@ static int
 rb_reg_initialize_str(VALUE obj, VALUE str, int options, onig_errmsg_buffer err,
         const char *sourcefile, int sourceline)
 {
-    rb_encoding *str_enc = rb_enc_get(str);
-
     VALUE unescaped;
     int ret = rb_reg_preinitialize_str(obj, str, options, err, &unescaped);
     if (ret == 0) {
-        ret = rb_reg_postinitialize(obj, unescaped, str_enc, options, err, sourcefile, sourceline);
+        ret = rb_reg_postinitialize(obj, unescaped, err, sourcefile, sourceline);
     }
 
     if (ret == 0 && !FL_TEST_RAW(obj, REG_FAKE_RE)) {
-        reg_set_source(obj, str, str_enc);
+        reg_set_source(obj, str, rb_enc_get(str));
     }
 
     return ret;
@@ -3665,7 +3662,7 @@ rb_reg_compile(VALUE str, int options, const char *sourcefile, int sourceline)
     RB_OBJ_WRITE(re, &RREGEXP(re)->src, fake_re.src);
     RREGEXP(re)->hash = fake_re.hash;
 
-    if (rb_reg_postinitialize(re, unescaped, rb_enc_get(str), options, err, sourcefile, sourceline) != 0) {
+    if (rb_reg_postinitialize(re, unescaped, err, sourcefile, sourceline) != 0) {
         rb_set_errinfo(rb_reg_error_desc(str, options, err));
         return Qnil;
     }
@@ -3755,7 +3752,7 @@ rb_reg_equal(VALUE re1, VALUE re2)
     if (RREGEXP_SRC(re1) != RREGEXP_SRC(re2)) return Qfalse;
 
     if (FL_TEST(re1, KCODE_FIXED) != FL_TEST(re2, KCODE_FIXED)) return Qfalse;
-    if (RREGEXP_PTR(re1)->options != RREGEXP_PTR(re2)->options) return Qfalse;
+    if (RREGEXP(re1)->options != RREGEXP(re2)->options) return Qfalse;
     return RBOOL(ENCODING_GET(re1) == ENCODING_GET(re2));
 }
 
