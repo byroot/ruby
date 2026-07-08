@@ -1,0 +1,15 @@
+prelude: |
+  long_string = ("x"*1000+"-hår").freeze
+benchmark:
+  size1: |
+    long_string.byteslice(-1..-1)
+  size23: |
+    long_string.byteslice(-23..-1)
+  size100: |
+    long_string.byteslice(-100..-1)
+  size250: |
+    long_string.byteslice(-250..-1)
+  size500: |
+    long_string.byteslice(-500..-1)
+  size1000: |
+    long_string.byteslice(-1000..-1)
