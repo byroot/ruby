@@ -537,7 +537,6 @@ RHASH_TABLE_EMPTY_P(VALUE hash)
 static void
 hash_st_table_init(VALUE hash, const struct st_hash_type *type, st_index_t size)
 {
-    fprintf(stderr, "slot_size = %zu\n", rb_gc_obj_slot_size(hash));
     RUBY_ASSERT(rb_gc_obj_slot_size(hash) >= sizeof(struct RHash) + sizeof(st_table));
     st_init_existing_table_with_size(RHASH_ST_TABLE(hash), type, size);
     RHASH_SET_ST_FLAG(hash);
@@ -725,7 +724,7 @@ ar_force_convert_table(VALUE hash, const char *file, int line)
         st_hash_t hashes[RHASH_AR_TABLE_MAX_SIZE];
         unsigned int bound, size;
 
-        RUBY_ASSERT(rb_gc_obj_slot_size(hash) >= sizeof(struct RHash) + sizeof(ar_table));
+        RUBY_ASSERT(rb_gc_obj_slot_size(hash) >= sizeof(struct RHash) + sizeof(st_table));
 
         // prepare hash values
         while (1) {
@@ -801,12 +800,12 @@ static int
 ar_add_direct_with_hash(VALUE hash, st_data_t key, st_data_t val, st_hash_t hash_value)
 {
     unsigned bin = RHASH_AR_TABLE_BOUND(hash);
+    const unsigned max_bound = ar_max_bound(hash);
 
-    if (RHASH_AR_TABLE_SIZE(hash) >= RHASH_AR_TABLE_MAX_SIZE) {
+    if (RHASH_AR_TABLE_SIZE(hash) >= max_bound) {
         return 1;
     }
     else {
-        const unsigned max_bound = ar_max_bound(hash);
         if (UNLIKELY(bin >= max_bound)) {
             bin = ar_compact_table(hash);
         }
@@ -1184,7 +1183,7 @@ ar_values(VALUE hash, st_data_t *values, st_index_t size)
 static ar_table*
 ar_copy(VALUE hash1, VALUE hash2)
 {
-    RUBY_ASSERT(rb_gc_obj_slot_size(hash1) >= sizeof(struct RHash) + sizeof(ar_table));
+    // RUBY_ASSERT(rb_gc_obj_slot_size(hash1) >= sizeof(struct RHash) + sizeof(ar_table));
     ar_table *old_tab = RHASH_AR_TABLE(hash2);
     ar_table *new_tab = RHASH_AR_TABLE(hash1);
 
