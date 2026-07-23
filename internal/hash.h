@@ -13,6 +13,7 @@
 #include "ruby/internal/stdbool.h"     /* for bool */
 #include "ruby/ruby.h"          /* for struct RBasic */
 #include "ruby/st.h"            /* for struct st_table */
+#include "shape.h"
 
 #define RHASH_AR_TABLE_MAX_SIZE SIZEOF_VALUE
 
@@ -192,6 +193,14 @@ RHASH_AR_TABLE_SIZE_RAW(VALUE h)
     return (unsigned)ret;
 }
 
+static inline unsigned
+ar_max_bound(VALUE hash)
+{
+  size_t usable_space = rb_obj_shape_slot_size(hash) - sizeof(struct RHash) - offsetof(ar_table, pairs);
+  usable_space /= sizeof(ar_table_pair);
+  return (unsigned)(usable_space > RHASH_AR_TABLE_MAX_SIZE ? RHASH_AR_TABLE_MAX_SIZE : usable_space);
+}
+
 #define RHASH_AR_TABLE_BOUND_RAW(h) \
   ((unsigned int)((RBASIC(h)->flags >> RHASH_AR_TABLE_BOUND_SHIFT) & \
                   (RHASH_AR_TABLE_BOUND_MASK >> RHASH_AR_TABLE_BOUND_SHIFT)))
@@ -203,6 +212,10 @@ RHASH_AR_TABLE_BOUND(VALUE h)
 {
     RUBY_ASSERT(RHASH_AR_TABLE_P(h));
     const unsigned int bound = RHASH_AR_TABLE_BOUND_RAW(h);
+    const unsigned max_bound = ar_max_bound(h);
+    if (max_bound < bound) {
+        return max_bound;
+    }
     RUBY_ASSERT(bound <= RHASH_AR_TABLE_MAX_SIZE);
     return bound;
 }
