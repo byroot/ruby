@@ -1033,7 +1033,7 @@ ar_insert(VALUE hash, st_data_t key, st_data_t value)
     }
 
     if (bin == max_bound) {
-        if (RHASH_AR_TABLE_SIZE(hash) >= RHASH_AR_TABLE_MAX_SIZE) {
+        if (RHASH_AR_TABLE_SIZE(hash) >= max_bound) {
             return -1;
         }
         else if (bin >= max_bound) {
@@ -5177,7 +5177,7 @@ rb_hash_bulk_insert(long argc, const VALUE *argv, VALUE hash)
         st_index_t size = argc / 2;
 
         if (RHASH_AR_TABLE_P(hash) &&
-            (RHASH_AR_TABLE_SIZE(hash) + size <= RHASH_AR_TABLE_MAX_SIZE)) {
+            (RHASH_AR_TABLE_SIZE(hash) + size <= ar_max_bound(hash))) {
             ar_bulk_insert(hash, argc, argv);
         }
         else {
