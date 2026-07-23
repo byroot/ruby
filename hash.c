@@ -405,13 +405,13 @@ typedef st_index_t st_hash_t;
 #define RHASH_AR_TABLE_REF(hash, n) (&RHASH_AR_TABLE(hash)->pairs[n])
 #define RHASH_AR_CLEARED_HINT 0xff
 
-// static inline unsigned
-// ar_max_bound(VALUE hash)
-// {
-//     size_t usable_space = rb_obj_shape_slot_size(hash) - sizeof(struct RHash) - offsetof(ar_table, pairs);
-//     usable_space /= sizeof(ar_table_pair);
-//     return (unsigned)(usable_space > RHASH_AR_TABLE_MAX_SIZE ? RHASH_AR_TABLE_MAX_SIZE : usable_space);
-// }
+static inline unsigned
+ar_max_bound(VALUE hash)
+{
+    size_t usable_space = rb_obj_shape_slot_size(hash) - sizeof(struct RHash) - offsetof(ar_table, pairs);
+    usable_space /= sizeof(ar_table_pair);
+    return (unsigned)(usable_space > RHASH_AR_TABLE_MAX_SIZE ? RHASH_AR_TABLE_MAX_SIZE : usable_space);
+}
 
 static inline size_t
 ar_memsize(VALUE hash)
@@ -625,7 +625,8 @@ static unsigned
 ar_find_entry_hint(VALUE hash, ar_hint_t hint, st_data_t key)
 {
     /* if table is NULL, then bound also should be 0 */
-    const unsigned converted_to_st_table = ar_max_bound(hash) + 1;
+    const unsigned max_bound = ar_max_bound(hash);
+    const unsigned converted_to_st_table = max_bound + 1;
     for (unsigned i = 0; i < RHASH_AR_TABLE_BOUND(hash); i++) {
         const ar_hint_t *hints = RHASH_AR_TABLE(hash)->ar_hint.ary;
         if (hints[i] == hint) {
@@ -663,7 +664,7 @@ ar_find_entry_hint(VALUE hash, ar_hint_t hint, st_data_t key)
         }
     }
     RB_DEBUG_COUNTER_INC(artable_hint_notfound);
-    return ar_max_bound(hash);
+    return max_bound;
 }
 
 static unsigned
