@@ -612,17 +612,17 @@ ar_equal(VALUE x, VALUE y)
 #define AR_HINT_BASE_MASK 0x101010101010101
 #define AR_HINT_NORMALIZE_MASK 0x7F7F7F7F7F7F7F7F
 #ifdef WORDS_BIGENDIAN
-#define AR_HINT_COUNT_TRAILING_ZERO_BYTES(x) (nlz_int64(x) >> 3)
+#define AR_HINT_FIND_FIRST_ZERO_BYTE(x) (nlz_int64(x) >> 3)
 #else
-#define AR_HINT_COUNT_TRAILING_ZERO_BYTES(x) (ntz_int64(x) >> 3)
+#define AR_HINT_FIND_FIRST_ZERO_BYTE(x) (ntz_int64(x) >> 3)
 #endif
 #else
 #define AR_HINT_BASE_MASK 0x1010101
 #define AR_HINT_NORMALIZE_MASK 0x7F7F7F7F
 #ifdef WORDS_BIGENDIAN
-#define AR_HINT_COUNT_TRAILING_ZERO_BYTES(x) (nlz_int32(x) >> 3)
+#define AR_HINT_FIND_FIRST_ZERO_BYTE(x) (nlz_int32(x) >> 3)
 #else
-#define AR_HINT_COUNT_TRAILING_ZERO_BYTES(x) (ntz_int32(x) >> 3)
+#define AR_HINT_FIND_FIRST_ZERO_BYTE(x) (ntz_int32(x) >> 3)
 #endif
 #endif
 
@@ -636,7 +636,9 @@ ar_hint_first_match(ar_hint_t needle, VALUE haystack)
 
     // Then turns 0x00 into 0x80, and any other bytes into 0x00.
     matches = ~((((matches & AR_HINT_NORMALIZE_MASK) + AR_HINT_NORMALIZE_MASK) | matches) | AR_HINT_NORMALIZE_MASK);
-    return AR_HINT_COUNT_TRAILING_ZERO_BYTES(matches);
+    unsigned index = AR_HINT_FIND_FIRST_ZERO_BYTE(matches);
+    RBIMPL_ASSERT_OR_ASSUME(index <= RHASH_AR_TABLE_MAX_SIZE);
+    return index;
 }
 
 // Returns the bin index if found, RHASH_AR_TABLE_MAX_BOUND if not found,
@@ -645,42 +647,43 @@ static unsigned
 ar_find_entry_hint(VALUE hash, ar_hint_t hint, st_data_t key)
 {
     unsigned first_match = ar_hint_first_match(hint, RHASH_AR_TABLE(hash)->ar_hint.word);
-    for (unsigned i = first_match; i < RHASH_AR_TABLE_BOUND(hash); i++) {
-        const ar_hint_t *hints = RHASH_AR_TABLE(hash)->ar_hint.ary;
-        if (hints[i] == hint) {
-            ar_table_pair *pair = RHASH_AR_TABLE_REF(hash, i);
-            int eq = ar_equal(key, pair->key);
-            if (UNLIKELY(!RHASH_AR_TABLE_P(hash))) {
-                return RHASH_AR_TABLE_CONVERTED_TO_ST_TABLE;
-            }
-            if (eq) {
-                RB_DEBUG_COUNTER_INC(artable_hint_hit);
-                return i;
-            }
-            else {
-#if 0
-                static int pid;
-                static char fname[256];
-                static FILE *fp;
 
-                if (pid != getpid()) {
-                    snprintf(fname, sizeof(fname), "/tmp/ruby-armiss.%d", pid = getpid());
-                    if ((fp = fopen(fname, "w")) == NULL) rb_bug("fopen");
+    if (LIKELY(first_match >= RHASH_AR_TABLE_BOUND(hash))) {
+        RB_DEBUG_COUNTER_INC(artable_hint_notfound);
+        return RHASH_AR_TABLE_MAX_BOUND;
+    }
+
+    RUBY_ASSERT(RHASH_AR_TABLE(hash)->ar_hint.ary[first_match] == hint);
+    int eq = ar_equal(key, RHASH_AR_TABLE_REF(hash, first_match)->key);
+    if (UNLIKELY(!RHASH_AR_TABLE_P(hash))) {
+        return RHASH_AR_TABLE_CONVERTED_TO_ST_TABLE;
+    }
+    if (LIKELY(eq)) {
+        RB_DEBUG_COUNTER_INC(artable_hint_hit);
+        return first_match;
+    }
+    else {
+        // In theory we could extract all the matching indexes in `ar_hint_first_match`,
+        // and avoid this loop, but sine `ar_equal` may call back into arbitrary code,
+        // the `ar_hint` may have changed.
+        for (unsigned i = first_match + 1; i < RHASH_AR_TABLE_BOUND(hash); i++) {
+            const ar_hint_t *hints = RHASH_AR_TABLE(hash)->ar_hint.ary;
+            if (UNLIKELY(hints[i] == hint)) {
+                eq = ar_equal(key, RHASH_AR_TABLE_REF(hash, i)->key);
+                if (UNLIKELY(!RHASH_AR_TABLE_P(hash))) {
+                    return RHASH_AR_TABLE_CONVERTED_TO_ST_TABLE;
                 }
-
-                st_hash_t h1 = ar_do_hash(key);
-                st_hash_t h2 = ar_do_hash(pair->key);
-
-                fprintf(fp, "miss: hash_eq:%d hints[%d]:%02x hint:%02x\n"
-                            "      key      :%016lx %s\n"
-                            "      pair->key:%016lx %s\n",
-                        h1 == h2, i, hints[i], hint,
-                        h1, rb_obj_info(key), h2, rb_obj_info(pair->key));
-#endif
-                RB_DEBUG_COUNTER_INC(artable_hint_miss);
+                if (eq) {
+                    RB_DEBUG_COUNTER_INC(artable_hint_hit);
+                    return i;
+                }
+                else {
+                    RB_DEBUG_COUNTER_INC(artable_hint_miss);
+                }
             }
         }
     }
+
     RB_DEBUG_COUNTER_INC(artable_hint_notfound);
     return RHASH_AR_TABLE_MAX_BOUND;
 }

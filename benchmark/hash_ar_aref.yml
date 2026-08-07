@@ -1,7 +1,10 @@
 prelude: |
   h = {a:1, b:2, c:3, d:4, e:5, f:6, g:7, h:8}
+  e = {}
 
 benchmark:
+  miss_empty: |
+    e[:a]; e[:a]; e[:a]; e[:a]; e[:a]; e[:a]; e[:a]; e[:a]; e[:a]; e[:a]
   hit_first: |
     h[:a]; h[:a]; h[:a]; h[:a]; h[:a]; h[:a]; h[:a]; h[:a]; h[:a]; h[:a]
   hit_third: |
