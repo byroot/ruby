@@ -612,17 +612,17 @@ ar_equal(VALUE x, VALUE y)
 #define AR_HINT_BASE_MASK 0x101010101010101
 #define AR_HINT_NORMALIZE_MASK 0x7F7F7F7F7F7F7F7F
 #ifdef WORDS_BIGENDIAN
-#define AR_HINT_FIND_FIRST_ZERO_BYTE(x) (nlz_int64(x) >> 3)
+#define AR_HINT_FIND_FIRST_ZERO_BYTE(x) (nlz_int64(x) / CHAR_BIT)
 #else
-#define AR_HINT_FIND_FIRST_ZERO_BYTE(x) (ntz_int64(x) >> 3)
+#define AR_HINT_FIND_FIRST_ZERO_BYTE(x) (ntz_int64(x) / CHAR_BIT)
 #endif
 #else
 #define AR_HINT_BASE_MASK 0x1010101
 #define AR_HINT_NORMALIZE_MASK 0x7F7F7F7F
 #ifdef WORDS_BIGENDIAN
-#define AR_HINT_FIND_FIRST_ZERO_BYTE(x) (nlz_int32(x) >> 3)
+#define AR_HINT_FIND_FIRST_ZERO_BYTE(x) (nlz_int32(x) / CHAR_BIT)
 #else
-#define AR_HINT_FIND_FIRST_ZERO_BYTE(x) (ntz_int32(x) >> 3)
+#define AR_HINT_FIND_FIRST_ZERO_BYTE(x) (ntz_int32(x) / CHAR_BIT)
 #endif
 #endif
 
