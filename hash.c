@@ -607,6 +607,19 @@ ar_equal(VALUE x, VALUE y)
     return rb_any_cmp(x, y) == 0;
 }
 
+#if defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(__aarch64__) || defined(_M_ARM64)
+#include <arm_neon.h>
+
+static inline unsigned int
+ar_hint_first_match(ar_hint_t needle, VALUE haystack)
+{
+    uint8x8_t bytes = vld1_u8((const unsigned char *)&haystack);
+    uint8x8_t matches = vceq_u8(bytes, vdup_n_u8(needle));
+    const uint64_t mask = vget_lane_u64(vreinterpret_u64_u8(matches), 0);
+    return ntz_int64(mask) >> 3;
+}
+
+#else
 
 #if SIZEOF_VALUE == 8
 #define AR_HINT_BASE_MASK 0x101010101010101
@@ -640,6 +653,8 @@ ar_hint_first_match(ar_hint_t needle, VALUE haystack)
     RBIMPL_ASSERT_OR_ASSUME(index <= RHASH_AR_TABLE_MAX_SIZE);
     return index;
 }
+
+#endif
 
 // Returns the bin index if found, RHASH_AR_TABLE_MAX_BOUND if not found,
 // or RHASH_AR_TABLE_CONVERTED_TO_ST_TABLE if #eql? or a Thread converted the hash to st_table.
