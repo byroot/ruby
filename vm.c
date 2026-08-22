@@ -4267,6 +4267,7 @@ static VALUE core_hash_merge_kwd(VALUE hash, VALUE kw)
 {
     kw = rb_to_hash_type(kw);
     if (NIL_P(hash)) {
+        // TODO: could we avoid the dup here?
         return rb_hash_resurrect(kw);
     }
     else {
