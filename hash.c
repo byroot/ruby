@@ -1557,6 +1557,12 @@ hash_alloc_capa(VALUE klass, VALUE flags, VALUE ifnone, size_t size, bool frozen
     return hash;
 }
 
+static VALUE
+hash_hidden_new(size_t size)
+{
+    return hash_alloc_capa(0, 0, Qnil, size, false);
+}
+
 VALUE
 rb_hash_alloc_copy(VALUE klass, VALUE src)
 {
@@ -1661,6 +1667,21 @@ hash_dup(VALUE hash, VALUE klass, VALUE flags)
 {
     VALUE dup = hash_alloc_capa(klass, flags, RHASH_IFNONE(hash), RHASH_SIZE(hash), false);
     return hash_copy(dup, hash);
+}
+
+static VALUE
+hash_dup_full_size(VALUE hash)
+{
+    size_t size = RHASH_SIZE(hash);
+    if (size < RHASH_AR_TABLE_MAX_SIZE) {
+        size = RHASH_AR_TABLE_MAX_SIZE;
+    }
+    const VALUE flags = RBASIC(hash)->flags;
+    VALUE ret = hash_alloc_capa(rb_obj_class(hash), flags & RHASH_PROC_DEFAULT, RHASH_IFNONE(hash), size, false);
+    hash_copy(ret, hash);
+    rb_copy_generic_ivar(ret, hash);
+
+    return ret;
 }
 
 VALUE
@@ -3436,7 +3457,7 @@ rb_hash_transform_keys(int argc, VALUE *argv, VALUE hash)
     else {
         RETURN_SIZED_ENUMERATOR(hash, 0, 0, hash_enum_size);
     }
-    result = rb_hash_new();
+    result = rb_hash_new_capa(RHASH_SIZE(hash));
     if (!RHASH_EMPTY_P(hash)) {
         if (transarg.trans) {
             transarg.result = result;
@@ -3563,7 +3584,7 @@ rb_hash_transform_keys_bang(int argc, VALUE *argv, VALUE hash)
     rb_hash_modify_check(hash);
     if (!RHASH_TABLE_EMPTY_P(hash)) {
         long i;
-        VALUE new_keys = hash_alloc(0);
+        VALUE new_keys = hash_hidden_new(RHASH_SIZE(hash));
         VALUE pairs = rb_ary_hidden_new(RHASH_SIZE(hash) * 2);
         rb_hash_foreach(hash, flatten_i, pairs);
         for (i = 0; i < RARRAY_LEN(pairs); i += 2) {
@@ -4495,7 +4516,9 @@ rb_hash_update_by(VALUE hash1, VALUE hash2, rb_hash_update_func *func)
 static VALUE
 rb_hash_merge(int argc, VALUE *argv, VALUE self)
 {
-    return rb_hash_update(argc, argv, copy_compare_by_id(rb_hash_dup(self), self));
+    // TODO: estimate size?
+    VALUE copy = copy_compare_by_id(hash_dup_full_size(self), self);
+    return rb_hash_update(argc, argv, copy);
 }
 
 static int
