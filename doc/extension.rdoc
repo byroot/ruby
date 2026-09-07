@@ -1,5 +1,5 @@
-# extension.rdoc -  -*- RDoc -*- created at: Mon Aug  7 16:45:54 JST 1995
 # :markup: markdown
+# extension.rdoc -  -*- RDoc -*- created at: Mon Aug  7 16:45:54 JST 1995
 
 {日本語}[rdoc-ref:extension.ja.rdoc]
 
