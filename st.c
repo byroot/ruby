@@ -567,6 +567,28 @@ stat_col(void)
 }
 #endif
 
+struct size_overflow_tag {
+    bool overflowed;            /**< Whether overflow happened or not. */
+    size_t result;              /**< Calculation result. */
+};
+
+static inline struct size_overflow_tag
+size_mul_add_overflow(size_t x, size_t y, size_t z) /* x * y + z */
+{
+    bool overflowed = false;
+    if (x > (SIZE_MAX / y)) {
+        overflowed = true;
+    }
+    size_t result = x * y;
+
+    if (z > (SIZE_MAX - result)) {
+        overflowed = true;
+    }
+    result += z;
+
+    return (struct size_overflow_tag) { overflowed, result };
+}
+
 st_table *
 st_init_existing_table_with_size(st_table *tab, const struct st_hash_type *type, st_index_t size)
 {
@@ -603,17 +625,28 @@ st_init_existing_table_with_size(st_table *tab, const struct st_hash_type *type,
     tab->num_entries = 0;
     tab->entries_start = tab->entries_bound = 0;
 
-    size_t memsize = get_allocated_entries(tab) * sizeof(st_table_entry);
-    if (tab->entry_power > MAX_POWER2_FOR_TABLES_WITHOUT_BINS) {
-        memsize += bins_size(tab);
+    struct size_overflow_tag overflow_result = size_mul_add_overflow(
+        get_allocated_entries(tab),
+        sizeof(st_table_entry),
+        bins_size(tab)
+    );
+
+    if (overflow_result.overflowed) {
+#ifdef RUBY
+        rb_raise(rb_eRuntimeError, "st_table too big");
+#else
+        return NULL;
+#endif
     }
-    tab->entries = (st_table_entry *)malloc(memsize);
+
+    tab->entries = (st_table_entry *)malloc(overflow_result.result);
+
 #ifndef RUBY
     if (tab->entries == NULL) {
-        st_free_table(tab);
         return NULL;
     }
 #endif
+
     make_tab_empty(tab);
     tab->rebuilds_num = 0;
     return tab;
