@@ -2634,11 +2634,7 @@ set_make_tab_empty(set_table *tab)
 static inline size_t
 set_entries_memsize(set_table *tab)
 {
-    size_t memsize = set_get_allocated_entries(tab) * sizeof(set_table_entry);
-    if (set_has_bins(tab)) {
-        memsize += set_bins_size(tab);
-    }
-    return memsize;
+    return rb_size_mul_add_or_raise(set_get_allocated_entries(tab), sizeof(set_table_entry), set_bins_size(tab), rb_eArgError);
 }
 
 static set_table *
