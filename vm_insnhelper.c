@@ -2108,6 +2108,10 @@ vm_populate_cc(VALUE klass, const struct rb_callinfo * const ci, ID mid)
 
     const rb_callable_method_entry_t *cme = rb_callable_method_entry(klass, mid);
 
+    if (UNLIKELY(vm_ci_flag(ci) & VM_CALL_SKIP_REFINED && cme->def->type == VM_METHOD_TYPE_REFINED)) {
+        fprintf(stderr, "HERE!\n");
+    }
+
     VM_ASSERT(cme == NULL || IMEMO_TYPE_P(cme, imemo_ment));
 
     if (cme == NULL) {
