@@ -2129,7 +2129,7 @@ negative_cme(ID mid)
 }
 
 static const rb_callable_method_entry_t *
-callable_method_entry_or_negative(VALUE klass, ID mid, VALUE *defined_class_ptr)
+callable_method_entry_or_negative0(VALUE klass, ID mid, VALUE *defined_class_ptr, bool skip_refined)
 {
     const rb_callable_method_entry_t *cme;
 
@@ -2156,10 +2156,12 @@ callable_method_entry_or_negative(VALUE klass, ID mid, VALUE *defined_class_ptr)
             VM_ASSERT(vm_ccs_p(ccs));
 
             if (LIKELY(!METHOD_ENTRY_INVALIDATED(ccs->cme))) {
-                VM_ASSERT(ccs->cme->called_id == mid);
-                if (defined_class_ptr != NULL) *defined_class_ptr = ccs->cme->defined_class;
-                RB_DEBUG_COUNTER_INC(ccs_found);
-                return ccs->cme;
+                if (LIKELY(!skip_refined || ccs->cme->def->type != VM_METHOD_TYPE_REFINED)) {
+                    VM_ASSERT(ccs->cme->called_id == mid);
+                    if (defined_class_ptr != NULL) *defined_class_ptr = ccs->cme->defined_class;
+                    RB_DEBUG_COUNTER_INC(ccs_found);
+                    return ccs->cme;
+                }
             }
         }
     }
@@ -2173,7 +2175,15 @@ callable_method_entry_or_negative(VALUE klass, ID mid, VALUE *defined_class_ptr)
         }
         else {
             VALUE defined_class;
-            rb_method_entry_t *me = search_method(klass, mid, &defined_class);
+            rb_method_entry_t *me = search_method0(klass, mid, &defined_class, false);
+
+            bool cacheable = true;
+
+            if (me != NULL && UNLIKELY(skip_refined && me->def->type == VM_METHOD_TYPE_REFINED)) {
+                cacheable = false;
+                me = search_method0(klass, mid, &defined_class, true);
+            }
+
             if (defined_class_ptr) *defined_class_ptr = defined_class;
 
             if (me != NULL) {
@@ -2183,11 +2193,22 @@ callable_method_entry_or_negative(VALUE klass, ID mid, VALUE *defined_class_ptr)
                 cme = negative_cme(mid);
             }
 
-            cache_callable_method_entry(klass, mid, cme);
+            if (cacheable) {
+                cache_callable_method_entry(klass, mid, cme);
+            }
+            else {
+                fprintf(stderr, "NO CACHE\n");
+            }
         }
     }
 
     return cme;
+}
+
+static const rb_callable_method_entry_t *
+callable_method_entry_or_negative(VALUE klass, ID mid, VALUE *defined_class_ptr)
+{
+    return callable_method_entry_or_negative0(klass, mid, defined_class_ptr, false);
 }
 
 // This is exposed for YJIT so that we can make assumptions that methods are
@@ -2199,17 +2220,29 @@ rb_callable_method_entry_or_negative(VALUE klass, ID mid)
 }
 
 static const rb_callable_method_entry_t *
-callable_method_entry(VALUE klass, ID mid, VALUE *defined_class_ptr)
+callable_method_entry_refined(VALUE klass, ID mid, VALUE *defined_class_ptr, bool skip_refined)
 {
     const rb_callable_method_entry_t *cme;
-    cme = callable_method_entry_or_negative(klass, mid, defined_class_ptr);
+    cme = callable_method_entry_or_negative0(klass, mid, defined_class_ptr, skip_refined);
     return !UNDEFINED_METHOD_ENTRY_P(cme) ? cme : NULL;
+}
+
+static const rb_callable_method_entry_t *
+callable_method_entry(VALUE klass, ID mid, VALUE *defined_class_ptr)
+{
+    return callable_method_entry_refined(klass, mid, defined_class_ptr, false);
+}
+
+const rb_callable_method_entry_t *
+rb_callable_method_entry_skip_refined(VALUE klass, ID mid)
+{
+    return callable_method_entry_refined(klass, mid, NULL, true);
 }
 
 const rb_callable_method_entry_t *
 rb_callable_method_entry(VALUE klass, ID mid)
 {
-    return callable_method_entry(klass, mid, NULL);
+    return callable_method_entry_refined(klass, mid, NULL, false);
 }
 
 static const rb_method_entry_t *resolve_refined_method(VALUE refinements, const rb_method_entry_t *me, VALUE *defined_class_ptr);

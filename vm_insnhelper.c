@@ -2108,10 +2108,6 @@ vm_populate_cc(VALUE klass, const struct rb_callinfo * const ci, ID mid)
 
     const rb_callable_method_entry_t *cme = rb_callable_method_entry(klass, mid);
 
-    if (UNLIKELY(vm_ci_flag(ci) & VM_CALL_SKIP_REFINED && cme->def->type == VM_METHOD_TYPE_REFINED)) {
-        fprintf(stderr, "HERE!\n");
-    }
-
     VM_ASSERT(cme == NULL || IMEMO_TYPE_P(cme, imemo_ment));
 
     if (cme == NULL) {
@@ -2126,6 +2122,10 @@ vm_populate_cc(VALUE klass, const struct rb_callinfo * const ci, ID mid)
         // classes. invokesuper is excluded because vm_search_super_method needs a
         // cme in the cc it gets back.
         return &rb_vm_uncached_cc;
+    }
+
+    if (UNLIKELY(vm_ci_flag(ci) & VM_CALL_SKIP_REFINED && cme->def->type == VM_METHOD_TYPE_REFINED)) {
+        // FIXME: DO NOT CACHE. How?
     }
 
     VALUE cc_tbl = RCLASS_WRITABLE_CC_TBL(klass);
